@@ -38,11 +38,16 @@ struct FailingVault: TokenVault {
 
 @Test func rateLimitRefillsWithoutClockRollback() {
     var limiter = RateLimiter(capacity: 2, perSecond: 1, now: 10)
-    #expect(limiter.allow(now: 10))
-    #expect(limiter.allow(now: 10))
-    #expect(!limiter.allow(now: 10))
-    #expect(limiter.allow(now: 11))
-    #expect(!limiter.allow(now: 10))
+    let first = limiter.allow(now: 10)
+    let second = limiter.allow(now: 10)
+    let exhausted = limiter.allow(now: 10)
+    let refilled = limiter.allow(now: 11)
+    let rolledBack = limiter.allow(now: 10)
+    #expect(first)
+    #expect(second)
+    #expect(!exhausted)
+    #expect(refilled)
+    #expect(!rolledBack)
 }
 
 @Test func pairingIsOneTimeAndRevocable() async throws {
