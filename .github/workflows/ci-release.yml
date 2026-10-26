@@ -94,7 +94,6 @@ jobs:
       stable: ${{ steps.version.outputs.stable }}
       version: ${{ steps.version.outputs.version }}
       release_tag: ${{ steps.version.outputs.release_tag }}
-      signed: ${{ steps.credentials.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,60 +123,23 @@ jobs:
           const releaseTag = isTag ? tag : 'testing';
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nstable=${stable}\nrelease_tag=${releaseTag}\n`);
           NODE
-      - name: Check signing credentials
-        id: credentials
-        env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: |
-          if [[ -n "$CERTIFICATE" && -n "$CERTIFICATE_PASSWORD" && -n "$SIGNING_IDENTITY" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]]; then
-            echo 'ready=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'ready=false' >> "$GITHUB_OUTPUT"
-            echo 'Signing/notarization credentials are missing; only an unsigned build validation can run.' >> "$GITHUB_STEP_SUMMARY"
-            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-              echo 'Tag release requires Developer ID signing and notarization.' >&2
-              exit 1
-            fi
-          fi
-      - name: Import Developer ID certificate
-        if: steps.credentials.outputs.ready == 'true'
-        env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-        run: |
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
-          echo "::add-mask::$KEYCHAIN_PASSWORD"
-          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/signing.p12"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
-          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/signing.keychain-db"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
-          security import "$RUNNER_TEMP/signing.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/signing.keychain-db"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
-          security list-keychains -d user -s "$RUNNER_TEMP/signing.keychain-db"
-      - name: Build signed, notarized universal App
-        if: steps.credentials.outputs.ready == 'true'
+      - name: Build ad-hoc signed universal App
         env:
           GIMME_OUTPUT_DIR: ${{ runner.temp }}/gimme-release
           GIMME_VERSION: ${{ steps.version.outputs.version }}
           GIMME_BUILD_NUMBER: ${{ github.run_number }}
-          GIMME_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: bash scripts/build-release.sh --notarize
-      - name: Validate universal App packaging without signing
-        if: steps.credentials.outputs.ready != 'true'
-        env:
-          GIMME_OUTPUT_DIR: ${{ runner.temp }}/gimme-validation
-          GIMME_BUILD_NUMBER: ${{ github.run_number }}
-        run: bash scripts/build-release.sh --unsigned
+        run: bash scripts/build-release.sh
+      - name: Write installation notes
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          This free release uses ad-hoc code signing and is not notarized by Apple.
+
+          If macOS blocks the first launch, open System Settings → Privacy & Security → Open Anyway for GimmeRemote.
+          Grant Accessibility permission to use remote input. After an update, macOS may require granting that permission again.
+
+          Stable releases are available through `brew install --cask lucientong/tap/gimme-remote` once the tap update completes.
+          NOTES
       - name: Publish release
-        if: steps.credentials.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
@@ -187,30 +149,25 @@ jobs:
             gh release delete testing --yes --cleanup-tag || true
             gh release create testing "$RUNNER_TEMP"/gimme-release/*.zip "$RUNNER_TEMP"/gimme-release/SHA256SUMS \
               --target "$GITHUB_SHA" --prerelease --latest=false --title "Testing · ${GITHUB_SHA:0:7}" \
-              --notes "Automatic master build. Commit: $GITHUB_SHA. Install the signed App and retain its Accessibility authorization."
+              --notes-file "$RUNNER_TEMP/release-notes.md"
           elif [[ "$STABLE" == true ]]; then
             gh release create "$RELEASE_TAG" "$RUNNER_TEMP"/gimme-release/*.zip "$RUNNER_TEMP"/gimme-release/SHA256SUMS \
-              --verify-tag --generate-notes --latest
+              --verify-tag --generate-notes --notes-file "$RUNNER_TEMP/release-notes.md" --latest
           else
             gh release create "$RELEASE_TAG" "$RUNNER_TEMP"/gimme-release/*.zip "$RUNNER_TEMP"/gimme-release/SHA256SUMS \
-              --verify-tag --generate-notes --prerelease --latest=false
+              --verify-tag --generate-notes --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease --latest=false
           fi
       - name: Upload release assets for tap update
-        if: steps.credentials.outputs.ready == 'true' && steps.version.outputs.stable == 'true'
+        if: steps.version.outputs.stable == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-assets
           path: ${{ runner.temp }}/gimme-release/*.zip
           retention-days: 7
-      - name: Clean up signing credentials
-        if: always()
-        run: |
-          if [[ -f "$RUNNER_TEMP/signing.keychain-db" ]]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db"; fi
-          rm -f "$RUNNER_TEMP/signing.p12"
 
   homebrew:
     needs: package
-    if: needs.package.outputs.stable == 'true' && needs.package.outputs.signed == 'true'
+    if: needs.package.outputs.stable == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -7,21 +7,12 @@ VERSION="${GIMME_VERSION:-0.1.0}"
 BUILD_NUMBER="${GIMME_BUILD_NUMBER:-1}"
 ARCH="${GIMME_ARCH:-universal}"
 UNSIGNED=false
-NOTARIZE=false
 for arg in "$@"; do
   case "$arg" in
     --unsigned) UNSIGNED=true ;;
-    --notarize) NOTARIZE=true ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
 done
-if [[ "$UNSIGNED" == false && -z "${GIMME_SIGNING_IDENTITY:-}" ]]; then
-  echo "Set GIMME_SIGNING_IDENTITY to a fixed Apple Development or Developer ID Application identity." >&2
-  exit 1
-fi
-if [[ "$NOTARIZE" == true && "$UNSIGNED" == true ]]; then
-  echo "Cannot notarize an unsigned validation build." >&2; exit 1
-fi
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
   echo "GIMME_VERSION must be MAJOR.MINOR.PATCH; build number must be numeric." >&2; exit 2
 fi
@@ -70,19 +61,12 @@ for executable in GimmeRemote gimme; do
   fi
 done
 if [[ "$UNSIGNED" == false ]]; then
-  codesign --force --options runtime --timestamp --sign "$GIMME_SIGNING_IDENTITY" "$APP/Contents/MacOS/gimme"
-  codesign --force --options runtime --timestamp --sign "$GIMME_SIGNING_IDENTITY" "$APP"
-  codesign --verify --deep --strict --verbose=2 "$APP"
-fi
-if [[ "$NOTARIZE" == true ]]; then
-  : "${APPLE_ID:?Missing APPLE_ID}"
-  : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID}"
-  : "${APPLE_APP_PASSWORD:?Missing APPLE_APP_PASSWORD}"
-  ditto -c -k --sequesterRsrc --keepParent "$APP" "$STAGE/notarize.zip"
-  xcrun notarytool submit "$STAGE/notarize.zip" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
-  xcrun stapler staple "$APP"
-  xcrun stapler validate "$APP"
-  spctl --assess --type execute --verbose=2 "$APP"
+  # Ad-hoc signing needs no certificate, account, keychain import or Apple service.
+  # Sign the embedded CLI first, then seal the App after combining architectures.
+  codesign --force --options runtime --timestamp=none --sign - "$APP/Contents/MacOS/gimme"
+  codesign --force --options runtime --timestamp=none --sign - "$APP"
+  codesign --verify --strict --all-architectures --verbose=2 "$APP/Contents/MacOS/gimme"
+  codesign --verify --deep --strict --all-architectures --verbose=2 "$APP"
 fi
 DESTINATION="$OUTPUT/GimmeRemote.app"
 if [[ -e "$DESTINATION" ]]; then
@@ -93,7 +77,7 @@ if [[ "$UNSIGNED" == false ]]; then
   ZIP="$OUTPUT/GimmeRemote-$VERSION-$ARCH.zip"
   ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
   (cd "$OUTPUT" && shasum -a 256 "$(basename "$ZIP")" > SHA256SUMS)
-  echo "Signed release: $ZIP"
+  echo "Ad-hoc signed release (not notarized): $ZIP"
 else
   echo "Unsigned validation bundle (not for distribution): $DESTINATION"
 fi
