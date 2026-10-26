@@ -44,12 +44,33 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - run: swift --version
+      - name: Report Apple toolchain
+        run: |
+          {
+            echo '### Apple toolchain'
+            echo '```text'
+            swift --version
+            xcodebuild -version
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/cache@v4
         with:
           path: mac/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mac/Package.resolved', 'mac/Package.swift') }}
-      - run: swift test --package-path mac --jobs 4
+      - name: Run Swift tests
+        run: |
+          if swift test --package-path mac --jobs 4 > "$RUNNER_TEMP/swift-test.log" 2>&1; then
+            cat "$RUNNER_TEMP/swift-test.log"
+          else
+            cat "$RUNNER_TEMP/swift-test.log"
+            {
+              echo '### Swift test failure'
+              echo '```text'
+              tail -120 "$RUNNER_TEMP/swift-test.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
       - run: bash scripts/test-core.sh
       - run: swift run --package-path mac --jobs 4 TransportChecks
       - run: bash -n scripts/build-release.sh scripts/test-core.sh

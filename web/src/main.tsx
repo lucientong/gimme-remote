@@ -128,8 +128,22 @@ function App() {
     catch (error) { setFeedback((error as Error).message); }
     finally { setSending(false); }
   }
+  const navigation = <>
+    <section class="toolbar" aria-label="浏览器与文本工具">
+      <ControlButton action="back" label="后退" icon="left" shortcut />
+      <ControlButton action="forward" label="前进" icon="right" shortcut />
+      <ControlButton action="reload" label="刷新" icon="reload" shortcut />
+      <button class={`control ${textOpen ? 'selected' : ''}`} onClick={() => setTextOpen(!textOpen)} disabled={!connection.enabled} aria-label="输入文本"><Icon name="keyboard" /><small>输入</small></button>
+    </section>
+    <div class="quick-tools">
+      <ControlButton action="address" label="地址栏" shortcut />
+      <ControlButton action="previousTab" label="上一标签" shortcut />
+      <ControlButton action="nextTab" label="下一标签" shortcut />
+      <ControlButton action="switchApp" label="⌘ Tab" shortcut />
+    </div>
+  </>;
 
-  return <main class="shell">
+  return <main class={`shell ${remote?.layout ?? 'generic'}`}>
     <header class="header">
       <div class="brand"><Icon name="remote" /><span>gimme<span class="brand-dot">.</span></span></div>
       <button class={`target ${connection.enabled ? 'online' : ''}`} onClick={() => setSettings(!settings)} aria-label="连接状态和触控板设置">
@@ -177,19 +191,9 @@ function App() {
       </div>
       <p class="volume-note">调节播放器音量 · 电视总音量用电视遥控器</p>
     </section>
+    {remote?.layout === 'browser' && navigation}
     <Touchpad speed={speed} acceleration={acceleration} />
-    <section class="toolbar" aria-label="浏览器与文本工具">
-      <ControlButton action="back" label="后退" icon="left" shortcut />
-      <ControlButton action="forward" label="前进" icon="right" shortcut />
-      <ControlButton action="reload" label="刷新" icon="reload" shortcut />
-      <button class={`control ${textOpen ? 'selected' : ''}`} onClick={() => setTextOpen(!textOpen)} disabled={!connection.enabled} aria-label="输入文本"><Icon name="keyboard" /><small>输入</small></button>
-    </section>
-    <div class="quick-tools">
-      <ControlButton action="address" label="地址栏" shortcut />
-      <ControlButton action="previousTab" label="上一标签" shortcut />
-      <ControlButton action="nextTab" label="下一标签" shortcut />
-      <ControlButton action="switchApp" label="⌘ Tab" shortcut />
-    </div>
+    {remote?.layout !== 'browser' && navigation}
     {textOpen && <form class="text-panel" onSubmit={sendText}>
       <label for="remote-text">输入到 Mac 当前焦点</label>
       <textarea id="remote-text" rows={3} value={text} onInput={e => setText(e.currentTarget.value)} placeholder="中文搜索词、网址或任何文字…" />

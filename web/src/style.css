@@ -58,6 +58,7 @@ h1 { font-size: 30px; letter-spacing: -1px; margin: 10px 0; }
 .touchpad { height: 218px; border-radius: 22px; border: 1px solid #444b3e; position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; background-color: #282e25; background-image: radial-gradient(#454d3b 1px, transparent 1px); background-size: 12px 12px; transition: border-color .2s, background-color .2s; }
 .touchpad.touching { border-color: var(--accent); background-color: #303926; }
 .touchpad.disabled { opacity: .45; }
+.browser .touchpad { margin-top: 12px; }
 .pad-cross { position: absolute; top: 42%; left: 49%; font-size: 20px; color: #8a9671; font-weight: 300; }
 .pad-label { position: absolute; top: 18px; left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .pad-label span { font: 10px "Menlo", monospace; letter-spacing: 2px; color: #c4ccb4; }
