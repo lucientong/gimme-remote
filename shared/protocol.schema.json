@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/lucientong/gimme-remote/protocol/v1",
+  "title": "Gimme Remote wire protocol v1",
+  "type": "object",
+  "required": ["version", "type", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "requestId": { "type": "string", "maxLength": 128 },
+    "type": {
+      "enum": [
+        "session.pair", "session.authenticate", "session.heartbeat", "session.disconnect",
+        "session.paired", "session.authenticated", "state.updated", "state.heartbeat",
+        "input.pointer.move", "input.pointer.scroll", "input.pointer.click", "input.pointer.drag",
+        "input.keyboard.shortcut", "input.text.insert", "media.command", "input.accepted", "error.control"
+      ]
+    },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "session.pair" } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["code"], "additionalProperties": false,
+        "properties": { "code": { "type": "string", "pattern": "^[0-9]{6}$" }, "deviceName": { "type": "string", "maxLength": 80 } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["session.authenticate", "session.paired"] } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["token"], "additionalProperties": false,
+        "properties": { "token": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["input.pointer.move", "input.pointer.scroll"] } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["dx", "dy"], "additionalProperties": false,
+        "properties": { "dx": { "type": "number", "minimum": -500, "maximum": 500 }, "dy": { "type": "number", "minimum": -500, "maximum": 500 } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "input.pointer.click" } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["button"], "additionalProperties": false,
+        "properties": { "button": { "enum": ["left", "right"] } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "input.pointer.drag" } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["phase"], "additionalProperties": false,
+        "properties": { "phase": { "enum": ["start", "end"] } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "input.text.insert" } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["text"], "additionalProperties": false,
+        "properties": { "text": { "type": "string", "minLength": 1, "maxLength": 8192, "description": "Server also caps UTF-8 bytes at 8192." } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "input.keyboard.shortcut" } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["action"], "additionalProperties": false,
+        "properties": { "action": { "enum": ["escape", "enter", "back", "forward", "reload", "address", "nextTab", "previousTab", "switchApp"] } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "media.command" } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["action"], "additionalProperties": false,
+        "properties": { "action": { "enum": ["playPause", "seekForward", "seekBackward", "volumeUp", "volumeDown", "mute", "fullscreen"] } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["state.updated", "state.heartbeat"] } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["state"], "additionalProperties": false,
+        "properties": { "state": { "$ref": "#/definitions/state" } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "error.control" } } },
+      "then": { "properties": { "payload": {
+        "type": "object", "required": ["error"], "additionalProperties": false,
+        "properties": { "error": { "type": "string", "maxLength": 80 } }
+      } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["session.heartbeat", "session.disconnect", "session.authenticated", "input.accepted"] } } },
+      "then": { "properties": { "payload": { "type": "object", "maxProperties": 0 } } }
+    }
+  ],
+  "definitions": {
+    "state": {
+      "type": "object",
+      "required": ["appName", "bundleId", "layout", "locked", "accessibility", "paused", "captureAvailable"],
+      "additionalProperties": false,
+      "properties": {
+        "appName": { "type": "string" }, "bundleId": { "type": "string" },
+        "layout": { "enum": ["iina", "browser", "generic"] },
+        "locked": { "type": "boolean" }, "accessibility": { "type": "boolean" },
+        "paused": { "type": "boolean" }, "captureAvailable": { "const": false }
+      }
+    }
+  }
+}

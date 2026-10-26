@@ -1,0 +1,225 @@
+name: Test and release
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+    tags: ['*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm test && npm run build
+        working-directory: web
+      - run: npm audit --audit-level=high
+        working-directory: web
+      - run: python3 -B -m unittest discover -s scripts/tests
+
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: swift --version
+      - uses: actions/cache@v4
+        with:
+          path: mac/.build
+          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mac/Package.resolved', 'mac/Package.swift') }}
+      - run: swift test --package-path mac --jobs 4
+      - run: bash scripts/test-core.sh
+      - run: swift run --package-path mac --jobs 4 TransportChecks
+      - run: bash -n scripts/build-release.sh scripts/test-core.sh
+
+  package:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [web, mac]
+    runs-on: macos-15
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'production' || 'testing' }}
+    permissions:
+      contents: write
+    outputs:
+      stable: ${{ steps.version.outputs.stable }}
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      signed: ${{ steps.credentials.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Validate version and channel
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const tag = process.env.REF_NAME;
+          const isTag = process.env.REF_TYPE === 'tag';
+          const match = /^v(\d+\.\d+\.\d+)(?:-([a-zA-Z0-9][a-zA-Z0-9.-]*))?$/.exec(tag);
+          if (isTag && !match) throw new Error('Use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease');
+          const version = isTag ? match[1] : '0.1.0';
+          const stable = isTag && !match[2];
+          const releaseTag = isTag ? tag : 'testing';
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nstable=${stable}\nrelease_tag=${releaseTag}\n`);
+          NODE
+      - name: Check signing credentials
+        id: credentials
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [[ -n "$CERTIFICATE" && -n "$CERTIFICATE_PASSWORD" && -n "$SIGNING_IDENTITY" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'Signing/notarization credentials are missing; only an unsigned build validation can run.' >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+              echo 'Tag release requires Developer ID signing and notarization.' >&2
+              exit 1
+            fi
+          fi
+      - name: Import Developer ID certificate
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/signing.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
+          security import "$RUNNER_TEMP/signing.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/signing.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/signing.keychain-db"
+      - name: Build signed, notarized universal App
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GIMME_OUTPUT_DIR: ${{ runner.temp }}/gimme-release
+          GIMME_VERSION: ${{ steps.version.outputs.version }}
+          GIMME_BUILD_NUMBER: ${{ github.run_number }}
+          GIMME_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash scripts/build-release.sh --notarize
+      - name: Validate universal App packaging without signing
+        if: steps.credentials.outputs.ready != 'true'
+        env:
+          GIMME_OUTPUT_DIR: ${{ runner.temp }}/gimme-validation
+          GIMME_BUILD_NUMBER: ${{ github.run_number }}
+        run: bash scripts/build-release.sh --unsigned
+      - name: Publish release
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          STABLE: ${{ steps.version.outputs.stable }}
+        run: |
+          if [[ "$RELEASE_TAG" == testing ]]; then
+            gh release delete testing --yes --cleanup-tag || true
+            gh release create testing "$RUNNER_TEMP"/gimme-release/*.zip "$RUNNER_TEMP"/gimme-release/SHA256SUMS \
+              --target "$GITHUB_SHA" --prerelease --latest=false --title "Testing · ${GITHUB_SHA:0:7}" \
+              --notes "Automatic master build. Commit: $GITHUB_SHA. Install the signed App and retain its Accessibility authorization."
+          elif [[ "$STABLE" == true ]]; then
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP"/gimme-release/*.zip "$RUNNER_TEMP"/gimme-release/SHA256SUMS \
+              --verify-tag --generate-notes --latest
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP"/gimme-release/*.zip "$RUNNER_TEMP"/gimme-release/SHA256SUMS \
+              --verify-tag --generate-notes --prerelease --latest=false
+          fi
+      - name: Upload release assets for tap update
+        if: steps.credentials.outputs.ready == 'true' && steps.version.outputs.stable == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/gimme-release/*.zip
+          retention-days: 7
+      - name: Clean up signing credentials
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/signing.keychain-db" ]]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db"; fi
+          rm -f "$RUNNER_TEMP/signing.p12"
+
+  homebrew:
+    needs: package
+    if: needs.package.outputs.stable == 'true' && needs.package.outputs.signed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Check cross-repository permission
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$TAP_TOKEN" ]]; then
+            echo 'Add HOMEBREW_TAP_TOKEN with Contents: write access to lucientong/homebrew-tap.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: lucientong/homebrew-tap
+          ref: master
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Generate Cask from actual release checksum
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+          TAG: ${{ needs.package.outputs.release_tag }}
+        run: |
+          python3 scripts/update-homebrew.py --version "$VERSION" --tag "$TAG" \
+            --archive "release-assets/GimmeRemote-$VERSION-universal.zip" --tap tap
+          ruby -c tap/Casks/gimme-remote.rb
+      - name: Update tap
+        working-directory: tap
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Casks/gimme-remote.rb
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "gimme-remote $VERSION"
+          git pull --rebase origin master
+          git push origin HEAD:master

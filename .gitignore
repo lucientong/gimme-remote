@@ -60,3 +60,14 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Local web development and generated App artifacts
+node_modules/
+web/dist/
+build/
+.swiftpm/
+.DS_Store
+.env
+.env.local
+*.p12
+*.mobileprovision
