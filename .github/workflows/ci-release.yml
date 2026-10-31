@@ -123,22 +123,69 @@ jobs:
           const releaseTag = isTag ? tag : 'testing';
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nstable=${stable}\nrelease_tag=${releaseTag}\n`);
           NODE
-      - name: Build ad-hoc signed universal App
+      - name: Import optional self-signed identity
+        env:
+          P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          if [[ -z "$P12_BASE64" ]]; then
+            echo '::notice title=Ad-hoc signing::Add MACOS_SIGNING_P12_BASE64 and MACOS_SIGNING_P12_PASSWORD to keep Accessibility permission across updates.'
+            exit 0
+          fi
+          # A fixed certificate needs no Apple account; it only has to stay the same between releases.
+          keychain="$RUNNER_TEMP/gimme-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 16)"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/gimme-signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/gimme-signing.p12" -k "$keychain" -P "$P12_PASSWORD" -A -f pkcs12
+          rm -f "$RUNNER_TEMP/gimme-signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          existing=()
+          while IFS= read -r line; do existing+=("$(sed -e 's/^[[:space:]]*"//' -e 's/"$//' <<< "$line")"); done \
+            < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          # Self-signed certificates are untrusted (CSSMERR_TP_NOT_TRUSTED), so `-v` would list none;
+          # codesign does not need trust, so take the first matching identity instead.
+          identity="$(security find-identity -p codesigning "$keychain" | grep -Eo '[0-9A-F]{40}' | head -1 || true)"
+          if [[ -z "$identity" ]]; then
+            echo 'MACOS_SIGNING_P12_BASE64 does not contain a code signing identity.' >&2
+            exit 1
+          fi
+          {
+            echo "GIMME_SIGNING_IDENTITY=$identity"
+            echo "GIMME_SIGNING_KEYCHAIN=$keychain"
+          } >> "$GITHUB_ENV"
+      - name: Build signed universal App
         env:
           GIMME_OUTPUT_DIR: ${{ runner.temp }}/gimme-release
           GIMME_VERSION: ${{ steps.version.outputs.version }}
           GIMME_BUILD_NUMBER: ${{ github.run_number }}
         run: bash scripts/build-release.sh
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          if [[ -n "${GIMME_SIGNING_KEYCHAIN:-}" && -e "$GIMME_SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$GIMME_SIGNING_KEYCHAIN"
+          fi
       - name: Write installation notes
         run: |
-          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          This free release uses ad-hoc code signing and is not notarized by Apple.
-
-          If macOS blocks the first launch, open System Settings → Privacy & Security → Open Anyway for GimmeRemote.
-          Grant Accessibility permission to use remote input. After an update, macOS may require granting that permission again.
-
-          Stable releases are available through `brew install --cask lucientong/tap/gimme-remote` once the tap update completes.
-          NOTES
+          if [[ -n "${GIMME_SIGNING_IDENTITY:-}" ]]; then
+            signing='a self-signed certificate (no Apple Developer ID)'
+            update='Updates signed with the same certificate keep that permission. When upgrading from an earlier ad-hoc build, remove GimmeRemote from Privacy & Security → Accessibility with "−" once, then add it again.'
+          else
+            signing='ad-hoc code signing'
+            update='If input stops working after an update, remove GimmeRemote from Privacy & Security → Accessibility with "−", then add it again.'
+          fi
+          {
+            echo "This free release uses $signing and is not notarized by Apple."
+            echo
+            echo 'If macOS blocks the first launch, open System Settings → Privacy & Security → Open Anyway for GimmeRemote.'
+            echo "Grant Accessibility permission to use remote input. $update"
+            echo
+            echo 'Stable releases are available through `brew install --cask lucientong/tap/gimme-remote` once the tap update completes.'
+          } > "$RUNNER_TEMP/release-notes.md"
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

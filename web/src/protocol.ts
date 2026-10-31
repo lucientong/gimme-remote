@@ -38,7 +38,16 @@ export const errors: Record<string, string> = {
   pointerBusy: '另一台手机正在拖动，请稍后再试',
   protocolVersion: '协议版本不匹配，请刷新页面',
   inputFailed: 'Mac 未能发送输入，请重试',
+  invalidPayload: '指令无效，请刷新页面后重试',
+  unsupportedMessage: 'Mac 端版本不支持该操作，请更新 Gimme Remote',
+  messageTooLarge: '内容过长，请分段发送',
 };
+
+/** Home Screen web apps have storage separate from Safari, so they pair on their own. */
+export function isStandalone(): boolean {
+  return (navigator as Navigator & { standalone?: boolean }).standalone === true
+    || (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches);
+}
 
 // crypto.randomUUID is unavailable on LAN HTTP, so request IDs use a local counter.
 let counter = 0;

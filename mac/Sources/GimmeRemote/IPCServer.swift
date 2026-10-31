@@ -25,7 +25,7 @@ final class IPCServer: @unchecked Sendable {
                 LocalIPC.setTimeout(client)
                 do {
                     let command = try LocalIPC.readLine(client)
-                    guard ["status", "pair", "stop"].contains(command) else {
+                    guard ["status", "pair", "stop", "resume"].contains(command) else {
                         try LocalIPC.writeLine("Unknown command", fd: client)
                         Darwin.close(client)
                         continue

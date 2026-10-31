@@ -10,6 +10,19 @@ struct FailingVault: TokenVault {
     func load() throws -> [String: String] { [:] }
     func save(_ devices: [String: String]) throws { throw ControlError("keychainUnavailable") }
 }
+struct UnreadableVault: TokenVault {
+    func load() throws -> [String: String] { throw ControlError("keychainUnavailable") }
+    func save(_ devices: [String: String]) throws {}
+}
+/// Locked at launch, unlocked later with a device paired before.
+final class UnlockingVault: TokenVault, @unchecked Sendable {
+    var locked = true
+    func load() throws -> [String: String] {
+        if locked { throw ControlError("keychainUnavailable") }
+        return ["old-token": "iPhone"]
+    }
+    func save(_ devices: [String: String]) throws {}
+}
 
 @Test func protocolRejectsUnsafeInput() throws {
     for text in [
@@ -86,9 +99,57 @@ struct FailingVault: TokenVault {
     #expect(!(await failing.isAuthenticated(id)))
 }
 
+@Test func unreadableVaultStartsEmptyAndCanPairAgain() async throws {
+    #expect(throws: (any Error).self) { try Sessions(vault: UnreadableVault()) }
+    let sessions = Sessions(recovering: UnreadableVault())
+    #expect(await sessions.vaultUnreadable())
+    #expect(await sessions.pairedCount() == 0)
+    let id = UUID()
+    _ = try await sessions.open(id)
+    let code = try await sessions.newCode()
+    _ = try await sessions.pair(id, code: code.code, name: "iPhone")
+    #expect(await sessions.isAuthenticated(id))
+    #expect(!(await sessions.vaultUnreadable()))
+}
+
+@Test func unlockedVaultRestoresDevicesPairedBefore() async throws {
+    let vault = UnlockingVault()
+    let sessions = Sessions(recovering: vault)
+    #expect(!(await sessions.retryVault()))
+    vault.locked = false
+    #expect(await sessions.retryVault())
+    #expect(await sessions.pairedCount() == 1)
+    #expect(!(await sessions.vaultUnreadable()))
+    let id = UUID()
+    _ = try await sessions.open(id)
+    try await sessions.authenticate(id, token: "old-token")
+    #expect(await sessions.isAuthenticated(id))
+}
+
 @Test func adaptersUsePlayerVolumeAndBrowserNavigation() throws {
     #expect(try KeyMapping.media("volumeUp", iina: true).key == 126)
     #expect(try KeyMapping.shortcut("address") == KeyStroke(37, command: true))
+    #expect(try KeyMapping.shortcut("nextTab") == KeyStroke(48, control: true))
+    #expect(try KeyMapping.shortcut("previousTab") == KeyStroke(48, shift: true, control: true))
     #expect(KeyMapping.layout(bundleId: "com.colliderli.iina") == "iina")
     #expect(KeyMapping.layout(bundleId: "com.apple.Safari") == "browser")
+}
+
+@Test func consecutiveNearbyTapsBecomeDoubleClicks() {
+    var clicks = ClickCounter()
+    let first = clicks.register(button: "left", at: .zero, time: 1, interval: 0.5)
+    let second = clicks.register(button: "left", at: CGPoint(x: 3, y: 2), time: 1.3, interval: 0.5)
+    let slow = clicks.register(button: "left", at: CGPoint(x: 3, y: 2), time: 2, interval: 0.5)
+    let moved = clicks.register(button: "left", at: CGPoint(x: 300, y: 2), time: 2.1, interval: 0.5)
+    let other = clicks.register(button: "right", at: CGPoint(x: 300, y: 2), time: 2.2, interval: 0.5)
+    #expect([first, second, slow, moved, other] == [1, 2, 1, 1, 1])
+}
+
+@Test func slowScrollKeepsFractionalRemainder() {
+    var scroll = ScrollAccumulator()
+    var total: Int32 = 0
+    for _ in 0..<10 { total += scroll.add(dx: 0, dy: -0.25).dy }
+    #expect(total == -2)
+    let whole = scroll.add(dx: 2.5, dy: 0)
+    #expect(whole.dx == 2)
 }

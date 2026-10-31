@@ -7,6 +7,8 @@ final class InputController {
     private var movement = CGVector.zero
     private var timer: Timer?
     private var dragOwner: UUID?
+    private var clicks = ClickCounter()
+    private var scroll = ScrollAccumulator()
 
     init() {
         timer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { [weak self] _ in
@@ -25,8 +27,10 @@ final class InputController {
             movement.dx = max(-1000, min(1000, movement.dx + p.dx!))
             movement.dy = max(-1000, min(1000, movement.dy + p.dy!))
         case "input.pointer.scroll":
+            let delta = scroll.add(dx: -p.dx!, dy: -p.dy!)
+            guard delta.dx != 0 || delta.dy != 0 else { return }
             guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
-                                      wheel1: Int32(-p.dy!), wheel2: Int32(-p.dx!), wheel3: 0) else {
+                                      wheel1: delta.dy, wheel2: delta.dx, wheel3: 0) else {
                 throw ControlError("inputFailed")
             }
             event.post(tap: .cghidEventTap)
@@ -34,8 +38,12 @@ final class InputController {
             guard dragOwner == nil else { throw ControlError("pointerBusy") }
             flushMovement()
             let right = p.button == "right"
-            try mouse(right ? .rightMouseDown : .leftMouseDown, button: right ? .right : .left)
-            try mouse(right ? .rightMouseUp : .leftMouseUp, button: right ? .right : .left)
+            let location = CGEvent(source: nil)?.location ?? .zero
+            // Mark consecutive taps so apps see a native double-click.
+            let count = clicks.register(button: p.button!, at: location, time: ProcessInfo.processInfo.systemUptime,
+                                        interval: NSEvent.doubleClickInterval)
+            try mouse(right ? .rightMouseDown : .leftMouseDown, button: right ? .right : .left, clickCount: count)
+            try mouse(right ? .rightMouseUp : .leftMouseUp, button: right ? .right : .left, clickCount: count)
         case "input.pointer.drag":
             flushMovement()
             if p.phase == "start" {
@@ -56,9 +64,11 @@ final class InputController {
 
     func release(session: UUID? = nil) {
         guard session == nil || dragOwner == nil || dragOwner == session else { return }
+        // Another phone's buffered movement survives an unrelated disconnect.
+        let owned = session == nil || dragOwner == session
         if dragOwner != nil { try? mouse(.leftMouseUp) }
         dragOwner = nil
-        movement = .zero
+        if owned { movement = .zero; clicks.reset(); scroll.reset() }
     }
 
     private func flushMovement() {
@@ -82,11 +92,12 @@ final class InputController {
                 mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
     }
 
-    private func mouse(_ type: CGEventType, button: CGMouseButton = .left) throws {
+    private func mouse(_ type: CGEventType, button: CGMouseButton = .left, clickCount: Int = 1) throws {
         guard let event = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGEvent(source: nil)?.location ?? .zero, mouseButton: button) else {
             throw ControlError("inputFailed")
         }
+        event.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
         event.post(tap: .cghidEventTap)
     }
     private func key(_ stroke: KeyStroke, pid: pid_t? = nil) throws {
@@ -94,6 +105,7 @@ final class InputController {
         if stroke.command { flags.insert(.maskCommand) }
         if stroke.option { flags.insert(.maskAlternate) }
         if stroke.shift { flags.insert(.maskShift) }
+        if stroke.control { flags.insert(.maskControl) }
         let appSwitch = stroke.command && stroke.key == 48
         if appSwitch {
             let command = CGEvent(keyboardEventSource: nil, virtualKey: 55, keyDown: true)

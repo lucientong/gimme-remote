@@ -16,13 +16,15 @@ brew install --cask lucientong/tap/gimme-remote
 open -a GimmeRemote
 ```
 
-打开菜单栏 App，授权“辅助功能”；手机与 Mac 连接同一 Wi-Fi 后扫描二维码，输入配对码并连接。Safari 可通过“分享 → 添加到主屏幕”保存入口。
+打开菜单栏 App，授权“辅助功能”；手机与 Mac 连接同一 Wi-Fi 后扫描二维码。想从主屏幕使用时，请先在 Safari 中“分享 → 添加到主屏幕”，再从主屏幕图标打开并在其中输入配对码：iOS 的主屏幕网页与 Safari 分开存储，在 Safari 中完成的配对不会带过去。
 
 音量按钮调节 **播放器音量**，电视总音量仍用电视遥控器。网页播放器快捷键受页面焦点与网站支持影响，始终可用触控板点击电视画面里的控件。不使用 Service Worker、云中继或任意脚本执行。
 
-要求 macOS 14+。发布包是 arm64 / Intel universal App，使用免费 ad-hoc 签名，经 GitHub Release 分发，未经过 Apple 公证。
+请在可信的家庭网络中使用。遥控页面在局域网内以明文 HTTP 提供，依靠一次性配对码与每台设备的令牌保护，而非 TLS；避免在公共或共享 Wi-Fi 中使用。
 
-首次打开若被 macOS 拦截，到“系统设置 → 隐私与安全 → 仍要打开”确认 GimmeRemote，并授予辅助功能权限。更新后，macOS 可能要求重新授予辅助功能权限。
+要求 macOS 14+。发布包是 arm64 / Intel universal App，不使用 Apple Developer ID，经 GitHub Release 分发，未经过 Apple 公证。
+
+首次打开若被 macOS 拦截，到“系统设置 → 隐私与安全 → 仍要打开”确认 GimmeRemote，并授予辅助功能权限。更新后若 GimmeRemote 在列表中仍显示已打开但输入无效：在“隐私与安全 → 辅助功能”中选中它，点 **−** 删除，再重新添加或重新打开 App。
 
 ## 开发
 
@@ -66,7 +68,9 @@ GIMME_DEV_ORIGINS=http://localhost:5173,http://192.168.1.2:5173
 ```bash
 gimme status   # 服务、权限、连接数和访问地址
 gimme pair     # 更新一次性配对码并输出地址
-gimme stop     # 暂停远程输入；从菜单栏恢复
+gimme stop     # 暂停远程输入
+gimme resume   # 恢复远程输入
+gimme --version
 ```
 
 CLI 使用当前用户私有目录下的 Unix socket。菜单栏支持暂停、断开设备、撤销全部配对、登录启动与连接期间防休眠。
@@ -75,7 +79,9 @@ CLI 使用当前用户私有目录下的 Unix socket。菜单栏支持暂停、�
 
 PR 运行检查；master push（包括合并 PR）在检查通过后发布 `testing` 预发布版；`vMAJOR.MINOR.PATCH` 发布正式 Release 并更新 Homebrew tap。带预发布后缀的 tag 发布预发布版，不更新正式 Cask。
 
-构建采用 ad-hoc 签名，不需要 Apple Developer 会员或 Apple Secrets。唯一需要手动设置的 repository secret 是 `lucientong/gimme-remote` 中的 `HOMEBREW_TAP_TOKEN`：使用 fine-grained GitHub PAT，只授权 **`lucientong/homebrew-tap`** 的 **Contents: Read and write**。GitHub Release 的发布令牌由 GitHub 自动提供。
+构建不需要 Apple Developer 会员。唯一必需的 repository secret 是 `lucientong/gimme-remote` 中的 `HOMEBREW_TAP_TOKEN`：使用 fine-grained GitHub PAT，只授权 **`lucientong/homebrew-tap`** 的 **Contents: Read and write**。GitHub Release 的发布令牌由 GitHub 自动提供。
+
+发布包默认 ad-hoc 签名，每次更新后 macOS 可能让辅助功能授权失效。如需保留，可把一张自签名代码签名证书配置为两个可选 secret：`MACOS_SIGNING_P12_BASE64`（`.p12` 的 base64）与 `MACOS_SIGNING_P12_PASSWORD`。该证书无需 Apple 账号，只需在各版本间保持不变；私钥不要放入仓库。
 
 在 macOS 上本地打包：
 
@@ -83,7 +89,7 @@ PR 运行检查；master push（包括合并 PR）在检查通过后发布 `test
 bash scripts/build-release.sh
 ```
 
-默认在 `build/` 下生成 universal `GimmeRemote.app`、ZIP 和 `SHA256SUMS`。再次构建时用 `GIMME_OUTPUT_DIR` 指定新目录，脚本不会替换已存在的 App。`--unsigned` 只验证 bundle 结构，不生成发布 ZIP。
+默认在 `build/` 下生成 universal `GimmeRemote.app`、ZIP 和 `SHA256SUMS`。再次构建时用 `GIMME_OUTPUT_DIR` 指定新目录，脚本不会替换已存在的 App。设置 `GIMME_SIGNING_IDENTITY`（可选 `GIMME_SIGNING_KEYCHAIN`）可改用固定身份签名。`--unsigned` 只验证 bundle 结构，不生成发布 ZIP。
 
 ## 工程
 

@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Connection } from './connection';
 import { RepeatButton, TouchpadGesture } from './gestures';
-import { readStored, store } from './protocol';
+import { isStandalone, readStored, store } from './protocol';
 import './style.css';
 
 const connection = new Connection();
@@ -158,7 +158,9 @@ function App() {
     {!status.authenticated && <section class="pair-panel">
       <span class="section-label">HELLO, REMOTE.</span>
       <h1>遥控器给我。</h1>
-      <p>手机与 Mac 连接同一 Wi-Fi。打开 Mac 菜单栏的 Gimme Remote，扫描二维码或输入六位配对码。</p>
+      {isStandalone() && !code
+        ? <p>主屏幕入口需要单独配对一次：在 Mac 菜单栏的 Gimme Remote 点“更新配对码”，然后输入六位码。</p>
+        : <p>手机与 Mac 连接同一 Wi-Fi。打开 Mac 菜单栏的 Gimme Remote，扫描二维码或输入六位配对码。想从主屏幕打开，请先“分享 → 添加到主屏幕”，再从主屏幕图标打开并配对。</p>}
       <form onSubmit={pair}>
         <label for="pair-code">配对码</label>
         <div class="pair-input"><input id="pair-code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
@@ -173,7 +175,7 @@ function App() {
       <label for="speed">指针速度 <strong>{speed.toFixed(1)}×</strong></label>
       <input id="speed" type="range" min="0.5" max="3" step="0.1" value={speed} onInput={e => setSpeed(Number(e.currentTarget.value))} />
       <label class="checkbox"><input type="checkbox" checked={acceleration} onChange={e => setAcceleration(e.currentTarget.checked)} />指针加速</label>
-      <p>Safari → 分享 → 添加到主屏幕，下次一键打开。</p>
+      <p>Safari → 分享 → 添加到主屏幕，下次一键打开。主屏幕入口与 Safari 分开保存配对，首次打开需在 Mac 上更新配对码后再输入一次。</p>
     </section>}
     <section class="remote-panel" aria-label="播放器遥控">
       <div class="section-top"><span class="section-label">{remote?.layout === 'iina' ? 'IINA PLAYER' : remote?.layout === 'browser' ? 'BROWSER PLAYER' : 'PLAYER CONTROL'}</span><span class="hint">看电视，随手操作</span></div>

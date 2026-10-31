@@ -60,13 +60,19 @@ for executable in GimmeRemote gimme; do
     cp "$STAGE/$ARCH/$executable" "$APP/Contents/MacOS/$executable"
   fi
 done
+IDENTITY="${GIMME_SIGNING_IDENTITY:--}"
 if [[ "$UNSIGNED" == false ]]; then
-  # Ad-hoc signing needs no certificate, account, keychain import or Apple service.
+  # A fixed (even self-signed) identity keeps the designated requirement stable across
+  # versions, so macOS keeps the Accessibility grant after updates. Without one, fall back
+  # to ad-hoc signing, which needs no certificate, account or Apple service.
+  sign=(codesign --force --options runtime --timestamp=none --sign "$IDENTITY")
+  if [[ -n "${GIMME_SIGNING_KEYCHAIN:-}" ]]; then sign+=(--keychain "$GIMME_SIGNING_KEYCHAIN"); fi
   # Sign the embedded CLI first, then seal the App after combining architectures.
-  codesign --force --options runtime --timestamp=none --sign - "$APP/Contents/MacOS/gimme"
-  codesign --force --options runtime --timestamp=none --sign - "$APP"
+  "${sign[@]}" "$APP/Contents/MacOS/gimme"
+  "${sign[@]}" "$APP"
   codesign --verify --strict --all-architectures --verbose=2 "$APP/Contents/MacOS/gimme"
   codesign --verify --deep --strict --all-architectures --verbose=2 "$APP"
+  codesign --display --requirements - "$APP"
 fi
 DESTINATION="$OUTPUT/GimmeRemote.app"
 if [[ -e "$DESTINATION" ]]; then
@@ -77,7 +83,11 @@ if [[ "$UNSIGNED" == false ]]; then
   ZIP="$OUTPUT/GimmeRemote-$VERSION-$ARCH.zip"
   ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
   (cd "$OUTPUT" && shasum -a 256 "$(basename "$ZIP")" > SHA256SUMS)
-  echo "Ad-hoc signed release (not notarized): $ZIP"
+  if [[ "$IDENTITY" == - ]]; then
+    echo "Ad-hoc signed release (not notarized): $ZIP"
+  else
+    echo "Signed release with a fixed identity (not notarized): $ZIP"
+  fi
 else
   echo "Unsigned validation bundle (not for distribution): $DESTINATION"
 fi

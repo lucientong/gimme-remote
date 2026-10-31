@@ -105,14 +105,29 @@ struct TransportChecks {
             }
         }
         precondition(accepted && probe.accepted.count == 2)
+        // Motion beyond the high-frequency budget is dropped without closing the socket.
+        payload = .init(); payload.dx = 1; payload.dy = 0
+        for _ in 0..<400 { try await send(.init(type: "input.pointer.move", payload: payload), to: client) }
+        payload = .init(); payload.text = "still connected"
+        try await send(.init(type: "input.text.insert", requestId: "flood", payload: payload), to: client)
+        accepted = false
+        for _ in 0..<5 {
+            let result = try await receive(client)
+            if result["type"] as? String == "input.accepted" && result["requestId"] as? String == "flood" {
+                accepted = true; break
+            }
+        }
+        let moves = probe.accepted.filter { $0 == "input.pointer.move" }.count
+        precondition(accepted && moves < 400 && probe.accepted.last == "input.text.insert")
+        let beforeRevoke = probe.accepted.count
         try await sessions.revokeAll()
         payload = .init(); payload.action = "playPause"
         try? await send(.init(type: "media.command", payload: payload), to: client)
         try await Task.sleep(for: .milliseconds(150))
-        precondition(probe.accepted.count == 2)
+        precondition(probe.accepted.count == beforeRevoke)
         client.cancel(with: .goingAway, reason: nil)
         serverTask.cancel()
         _ = try? await serverTask.value
-        print("Transport checks passed: HTTP root, real WebSocket Origin rejection, unpaired input rejection, pairing, Unicode acknowledgement, maximum text frame, revocation.")
+        print("Transport checks passed: HTTP root, real WebSocket Origin rejection, unpaired input rejection, pairing, Unicode acknowledgement, maximum text frame, motion flood kept open, revocation.")
     }
 }

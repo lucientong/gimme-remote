@@ -62,6 +62,7 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 
 # Local web development and generated App artifacts
+.docs/
 node_modules/
 web/dist/
 build/

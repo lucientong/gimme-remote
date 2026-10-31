@@ -72,7 +72,9 @@ public struct RemoteServer: Sendable {
                                 }
                                 guard await sessions.isAuthenticated(id) else { throw ControlError("unauthorized") }
                                 let fast = ["input.pointer.move", "input.pointer.scroll"].contains(request.type)
-                                guard fast ? highFrequency.allow() : controls.allow() else { throw ControlError("rateLimited") }
+                                // Excess motion is stale by the next frame; drop it instead of disconnecting.
+                                if fast && !highFrequency.allow() { continue }
+                                guard fast || controls.allow() else { throw ControlError("rateLimited") }
                                 if request.type == "session.disconnect" { return }
                                 if request.type == "session.heartbeat" {
                                     send(.init(type: "session.heartbeat", requestId: requestId))

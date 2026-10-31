@@ -36,9 +36,10 @@ class HomebrewTests(unittest.TestCase):
         self.assertIn('version "1.2.3"', cask)
         self.assertIn('app "GimmeRemote.app"', cask)
         self.assertIn('Contents/MacOS/gimme', cask)
-        self.assertIn('ad-hoc signing', cask)
+        self.assertIn('uninstall quit: "com.lucientong.GimmeRemote"', cask)
+        self.assertIn('not notarized', cask)
         self.assertIn('Open Anyway', cask)
-        self.assertIn('updates may require granting it again', cask)
+        self.assertIn('then add it again', cask)
 
     def test_prerelease_and_mismatched_tag_are_rejected(self):
         self.assertNotEqual(self.generate("1.2.3", "v1.2.3-beta.1").returncode, 0)

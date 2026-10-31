@@ -8,6 +8,20 @@ struct BrokenVault: TokenVault {
     func load() throws -> [String: String] { [:] }
     func save(_ devices: [String: String]) throws { throw ControlError("keychainUnavailable") }
 }
+struct LockedVault: TokenVault {
+    func load() throws -> [String: String] { throw ControlError("keychainUnavailable") }
+    func save(_ devices: [String: String]) throws {}
+}
+
+/// Locked at launch, unlocked later with a device paired before.
+final class UnlockingVault: TokenVault, @unchecked Sendable {
+    var locked = true
+    func load() throws -> [String: String] {
+        if locked { throw ControlError("keychainUnavailable") }
+        return ["old-token": "iPhone"]
+    }
+    func save(_ devices: [String: String]) throws {}
+}
 
 @main
 struct CoreChecks {
@@ -50,10 +64,33 @@ struct CoreChecks {
         catch let error as ControlError { precondition(error.code == "keychainUnavailable") }
         let bypassed = await failed.isAuthenticated(id)
         precondition(!bypassed)
+        let recovering = Sessions(recovering: LockedVault())
+        let unreadable = await recovering.vaultUnreadable(), empty = await recovering.pairedCount() == 0
+        precondition(unreadable && empty)
+        _ = try await recovering.open(id)
+        let retry = try await recovering.newCode()
+        _ = try await recovering.pair(id, code: retry.code, name: "Phone")
+        let recovered = await recovering.isAuthenticated(id)
+        precondition(recovered)
+        let unlocking = UnlockingVault(), restoring = Sessions(recovering: unlocking)
+        let stillLocked = await restoring.retryVault()
+        unlocking.locked = false
+        let restored = await restoring.retryVault(), oldDevice = await restoring.pairedCount() == 1
+        let readable = !(await restoring.vaultUnreadable())
+        precondition(!stillLocked && restored && oldDevice && readable)
         let address = try KeyMapping.shortcut("address")
         let volume = try KeyMapping.media("volumeUp", iina: true)
+        let nextTab = try KeyMapping.shortcut("nextTab"), previousTab = try KeyMapping.shortcut("previousTab")
         precondition(address == .init(37, command: true))
         precondition(volume.key == 126)
-        print("Core checks passed: protocol, Unicode, Origin, rate limit, one-time pairing, revocation, persistence failure, shortcuts.")
+        precondition(nextTab == .init(48, control: true) && previousTab == .init(48, shift: true, control: true))
+        var clicks = ClickCounter()
+        precondition(clicks.register(button: "left", at: .zero, time: 1, interval: 0.5) == 1)
+        precondition(clicks.register(button: "left", at: CGPoint(x: 2, y: 2), time: 1.3, interval: 0.5) == 2)
+        precondition(clicks.register(button: "left", at: CGPoint(x: 2, y: 2), time: 2, interval: 0.5) == 1)
+        var scroll = ScrollAccumulator(), scrolled: Int32 = 0
+        for _ in 0..<10 { scrolled += scroll.add(dx: 0, dy: -0.25).dy }
+        precondition(scrolled == -2)
+        print("Core checks passed: protocol, Unicode, Origin, rate limit, one-time pairing, revocation, persistence failure, unreadable Keychain recovery, Keychain unlock restore, shortcuts, double-click, slow scroll.")
     }
 }

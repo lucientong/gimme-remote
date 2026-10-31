@@ -44,15 +44,18 @@ destination.write_text(f'''cask "gimme-remote" do
   app "GimmeRemote.app"
   binary "#{{appdir}}/GimmeRemote.app/Contents/MacOS/gimme"
 
+  uninstall quit: "com.lucientong.GimmeRemote"
+
   zap trash: [
     "~/Library/Application Support/GimmeRemote",
     "~/Library/Preferences/com.lucientong.GimmeRemote.plist",
   ]
 
   caveats <<~EOS
-    GimmeRemote uses ad-hoc signing and is not notarized by Apple.
+    GimmeRemote is signed without an Apple Developer ID and is not notarized by Apple.
     If macOS blocks the first launch, open System Settings > Privacy & Security > Open Anyway.
-    Grant Accessibility permission for remote input; updates may require granting it again.
+    Grant Accessibility permission for remote input. If input stops working after an update,
+    remove GimmeRemote from Privacy & Security > Accessibility with "-", then add it again.
   EOS
 end
 ''')

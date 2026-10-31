@@ -12,7 +12,6 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>让同一 Wi-Fi 中的手机发现并遥控你的 Mac。</string>
-  <key>NSBonjourServices</key><array><string>_gimme._tcp</string></array>
+  <key>NSLocalNetworkUsageDescription</key><string>让同一 Wi-Fi 中的手机连接并遥控你的 Mac。</string>
 </dict>
 </plist>

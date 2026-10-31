@@ -52,10 +52,30 @@ public actor Sessions {
     private var pairLimit = RateLimiter(capacity: 5, perSecond: 1.0 / 12)
     private var connectLimit = RateLimiter(capacity: 20, perSecond: 2)
     private var epoch = 0
+    private var unreadable = false
 
     public init(vault: any TokenVault = KeychainVault()) throws {
         self.vault = vault
         self.devices = try vault.load()
+    }
+
+    /// Starts without paired devices when the vault cannot be read (locked or denied Keychain),
+    /// so the App stays usable and phones can pair again instead of the App quitting.
+    public init(recovering vault: any TokenVault) {
+        self.vault = vault
+        do { self.devices = try vault.load() } catch { self.devices = [:]; self.unreadable = true }
+    }
+
+    public func vaultUnreadable() -> Bool { unreadable }
+
+    /// Re-reads an unreadable vault, e.g. after the Keychain is unlocked. Callers should only
+    /// retry on user presence, because a denied Keychain may prompt again on every read.
+    @discardableResult
+    public func retryVault() -> Bool {
+        guard unreadable, let stored = try? vault.load() else { return false }
+        devices = stored
+        unreadable = false
+        return true
     }
 
     public func newCode(now: Date = Date()) throws -> PairingCode {
@@ -95,11 +115,14 @@ public actor Sessions {
         guard pairLimit.allow() else { throw ControlError("rateLimited") }
         guard let pairing, pairing.expires > now, pairing.code == code else { throw ControlError("invalidPairingCode") }
         guard devices.count < 32 else { throw ControlError("deviceLimit") }
+        // Pairing is deliberate, so retry an unreadable vault here rather than on every reconnect.
+        retryVault()
         let token = try Self.randomBytes(count: 32).map { String(format: "%02x", $0) }.joined()
         var next = devices
         next[token] = name.isEmpty ? "iPhone" : name
         try vault.save(next)
         devices = next
+        unreadable = false
         self.pairing = nil
         authenticated[id] = token
         return token
@@ -122,6 +145,7 @@ public actor Sessions {
     public func revokeAll() throws {
         try vault.save([:])
         devices = [:]
+        unreadable = false
         pairing = nil
         disconnectAll()
     }
