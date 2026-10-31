@@ -142,7 +142,8 @@ final class UnlockingVault: TokenVault, @unchecked Sendable {
     let slow = clicks.register(button: "left", at: CGPoint(x: 3, y: 2), time: 2, interval: 0.5)
     let moved = clicks.register(button: "left", at: CGPoint(x: 300, y: 2), time: 2.1, interval: 0.5)
     let other = clicks.register(button: "right", at: CGPoint(x: 300, y: 2), time: 2.2, interval: 0.5)
-    #expect([first, second, slow, moved, other] == [1, 2, 1, 1, 1])
+    let counts = [first, second, slow, moved, other], expected: [Int] = [1, 2, 1, 1, 1]
+    #expect(counts == expected)
 }
 
 @Test func slowScrollKeepsFractionalRemainder() {
