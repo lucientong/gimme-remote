@@ -90,6 +90,8 @@ export class Connection {
     this.ws.send(JSON.stringify({ version: 1, type, requestId: id, payload }));
     return true;
   }
+  /** A saved token means this page paired before and only needs to reconnect. */
+  get paired() { return !!this.token; }
   get enabled() {
     const remote = this.state.remote;
     return this.state.connected && this.state.authenticated && !!remote

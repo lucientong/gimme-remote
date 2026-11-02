@@ -2,16 +2,15 @@
 
 [English](README.md) | **简体中文**
 
-**遥控器给我。** Mac 接电视，手机当遥控器。Swift 原生菜单栏 App + 局域网手机网页，无需安装 iOS App。
+**用手机遥控接在电视上的 Mac。** 扫码即用，无需安装 App，局域网直连。Mac 端是 Swift 原生菜单栏 App，手机端是它在局域网内提供的网页。
 
-一期已实现播放器遥控、触控板、中文文本输入、IINA / 浏览器快捷键、二维码配对、Keychain 令牌、权限提示、锁屏提示、重连、登录启动、防休眠和本机 `gimme` CLI。截图点击为后续可选增强。
+支持：播放控制（IINA / 浏览器）、触控板（含双击、滚动、拖动）、中文整段输入、浏览器快捷键、二维码配对、Keychain 保存的设备令牌、权限与锁屏提示、断线重连、登录启动、连接时防休眠，以及本机 `gimme` CLI。
+
+后续计划：截图点击、单台设备管理、英文界面。
 
 ## 安装
 
-首次稳定版发布并同步 tap 后：
-
 ```bash
-brew tap lucientong/tap
 brew install --cask lucientong/tap/gimme-remote
 open -a GimmeRemote
 ```
@@ -101,3 +100,7 @@ scripts/    构建、核心检查与 Homebrew Cask 生成
 ```
 
 浏览器、iPhone、HDMI 显示与系统权限的真实行为需要实机验收，自动测试不等同于播放器全场景验收。
+
+图标由 `swift scripts/make-icons.swift` 生成（`mac/AppIcon.icns` 与 `web/public/icons/`），修改后重新运行并提交产物。
+
+名字来自英文口语 *gimme the remote*（遥控器给我）。

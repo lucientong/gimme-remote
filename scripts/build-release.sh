@@ -19,7 +19,8 @@ fi
 cd "$ROOT/web"
 npm ci
 npm test
-npm run build
+# The phone page shows the App version so users can report it with issues.
+VITE_APP_VERSION="$VERSION" npm run build
 cd "$ROOT"
 mkdir -p "$OUTPUT"
 STAGE="$(mktemp -d)"
@@ -29,6 +30,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Web"
 cp mac/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
+cp mac/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp -R web/dist/. "$APP/Contents/Resources/Web/"
 
 case "$ARCH" in

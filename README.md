@@ -4,14 +4,13 @@
 
 **Gimme the remote.** Connect your Mac to a TV and use your phone as the remote. A native Swift menu bar app serves a mobile web interface on your local network. No iOS app required.
 
-The first release implements media controls, a touchpad, Chinese text input, IINA and browser shortcuts, QR code pairing, Keychain tokens, permission guidance, lock screen status, reconnection, launch at login, sleep prevention, and the local `gimme` CLI. Screenshot-based clicking is a planned optional enhancement.
+Features: media controls for IINA and browsers, a touchpad (with double-click, scrolling, and dragging), Chinese text input, browser shortcuts, QR code pairing, per-device tokens in the Keychain, permission and lock screen guidance, reconnection, launch at login, sleep prevention while connected, and the local `gimme` CLI.
+
+Planned: screenshot-based clicking, per-device management, and an English interface.
 
 ## Installation
 
-Once the first stable release is published and synced to the Homebrew tap:
-
 ```bash
-brew tap lucientong/tap
 brew install --cask lucientong/tap/gimme-remote
 open -a GimmeRemote
 ```
@@ -101,3 +100,5 @@ scripts/    Builds, core checks, and Homebrew Cask generation
 ```
 
 Browser, iPhone, HDMI display, and system permission behavior require manual testing on real devices. Automated tests do not cover every player scenario.
+
+Icons are rendered by `swift scripts/make-icons.swift` into `mac/AppIcon.icns` and `web/public/icons/`; rerun it and commit the output after changing them.
