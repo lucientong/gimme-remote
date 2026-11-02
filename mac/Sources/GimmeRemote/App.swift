@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // objectWillChange fires before the value lands; the next run loop sees the new state.
         iconUpdates = model.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateIcon() }
         popover.behavior = .transient
-        let host = NSHostingController(rootView: MenuPanel(model: model))
+        let host = NSHostingController(rootView: MenuPanel(model: model, maximumHeight: panelHeight))
         // The panel grows and shrinks with its content (e.g. the pairing QR code folding away).
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
@@ -78,7 +78,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggle() {
         guard let button = statusItem.button else { return }
         if popover.isShown { popover.performClose(nil) }
-        else { popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY); NSApp.activate(ignoringOtherApps: true) }
+        else {
+            // The menu bar may be on a different screen than the frontmost app.
+            if let host = popover.contentViewController as? NSHostingController<MenuPanel>, let model {
+                host.rootView = MenuPanel(model: model, maximumHeight: panelHeight)
+            }
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+    private var panelHeight: CGFloat {
+        let screen = statusItem.button?.window?.screen ?? NSScreen.main
+        return max(1, (screen?.visibleFrame.height ?? 800) - 64)
     }
     func applicationWillTerminate(_ notification: Notification) { model?.stop() }
 }
@@ -223,9 +234,11 @@ final class AppModel: ObservableObject {
 
 struct MenuPanel: View {
     @ObservedObject var model: AppModel
+    var maximumHeight: CGFloat
     @State private var addingDevice = false
     @State private var confirmRevoke = false
     @State private var copied = false
+    @State private var contentHeight: CGFloat = 620
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     // With no paired phone the QR code is the next step; otherwise it waits behind "添加新设备".
     private var showPairing: Bool { model.paired == 0 || addingDevice }
@@ -238,6 +251,18 @@ struct MenuPanel: View {
         return ("等待手机连接", .secondary)
     }
     var body: some View {
+        ScrollView {
+            content
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: MenuPanelHeightKey.self, value: proxy.size.height)
+                })
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: 340, height: min(contentHeight, maximumHeight))
+        .onPreferenceChange(MenuPanelHeightKey.self) { contentHeight = $0 }
+        .onChange(of: model.paired) { old, new in if new > old { addingDevice = false } }
+    }
+    private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
             if !model.trusted { accessibilityGuide }
@@ -259,13 +284,12 @@ struct MenuPanel: View {
                 }
             }
             HStack {
-                Text("Gimme Remote v\(version)").font(.caption).foregroundStyle(.tertiary)
+                Text("Gimme Remote \(version == "dev" ? version : "v\(version)")").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
                 Button("退出") { NSApp.terminate(nil) }.controlSize(.small)
             }
         }
         .padding(16).frame(width: 340).fixedSize(horizontal: false, vertical: true)
-        .onChange(of: model.paired) { old, new in if new > old { addingDevice = false } }
     }
     private var header: some View {
         HStack(spacing: 10) {
@@ -386,4 +410,9 @@ struct MenuPanel: View {
                                                     from: output.extent.applying(CGAffineTransform(scaleX: 8, y: 8))) else { return nil }
         return NSImage(cgImage: image, size: NSSize(width: 176, height: 176))
     }
+}
+
+private struct MenuPanelHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

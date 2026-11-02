@@ -12,7 +12,7 @@ func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
 }
 
 /// `inset` leaves the transparent margin and shadow macOS icons expect; Home Screen icons are full bleed.
-func render(size: Int, inset: Bool) -> CGImage {
+func render(size: Int, inset: Bool, compact: Bool = false) -> CGImage {
     let s = CGFloat(size)
     let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
                         space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -31,6 +31,23 @@ func render(size: Int, inset: Bool) -> CGImage {
     ctx.addPath(tilePath); ctx.clip()
     let gradient = CGGradient(colorsSpace: nil, colors: [color(0x2a3027), color(0x141714)] as CFArray, locations: [0, 1])!
     ctx.drawLinearGradient(gradient, start: CGPoint(x: tile.minX, y: tile.maxY), end: CGPoint(x: tile.maxX, y: tile.minY), options: [])
+
+    // Finder's small icons use one large play key instead of an unreadable remote outline.
+    if compact {
+        let center = CGPoint(x: tile.midX, y: tile.midY)
+        let radius = tile.width * 0.36
+        ctx.setFillColor(color(0xa5b957))
+        ctx.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius - s * 0.02, width: radius * 2, height: radius * 2))
+        ctx.setFillColor(color(0xd9f279))
+        ctx.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+        let t = radius * 0.5
+        ctx.move(to: CGPoint(x: center.x - t * 0.7, y: center.y + t))
+        ctx.addLine(to: CGPoint(x: center.x + t * 1.05, y: center.y))
+        ctx.addLine(to: CGPoint(x: center.x - t * 0.7, y: center.y - t))
+        ctx.closePath(); ctx.setFillColor(color(0x242e15)); ctx.fillPath()
+        ctx.restoreGState()
+        return ctx.makeImage()!
+    }
 
     // The remote, tilted counterclockwise like the brand mark on the phone page.
     let unit = tile.width
@@ -78,8 +95,8 @@ func write(_ image: CGImage, to path: String) {
 
 let iconset = NSTemporaryDirectory() + "AppIcon-\(ProcessInfo.processInfo.processIdentifier).iconset"
 for points in [16, 32, 128, 256, 512] {
-    write(render(size: points, inset: true), to: "\(iconset)/icon_\(points)x\(points).png")
-    write(render(size: points * 2, inset: true), to: "\(iconset)/icon_\(points)x\(points)@2x.png")
+    write(render(size: points, inset: true, compact: points <= 32), to: "\(iconset)/icon_\(points)x\(points).png")
+    write(render(size: points * 2, inset: true, compact: points <= 32), to: "\(iconset)/icon_\(points)x\(points)@2x.png")
 }
 let iconutil = Process()
 iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")

@@ -21,7 +21,7 @@ function Icon({ name }: { name: string }) {
     plus: <path d="M5 12h14M12 5v14" />,
     mute: <><path d="M11 5 6 9H3v6h3l5 4zM16 9l5 6m0-6-5 6" /></>,
     fullscreen: <path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5" />,
-    escape: <><path d="M4 4h6M4 4v6M4 4l7 7" /><path d="M13.5 4.6A8 8 0 1 1 4.6 13.5" /></>,
+    switchApp: <><rect x="3" y="3" width="12" height="12" rx="2" /><path d="M9 18v1a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1M6 9h6m-2-2 2 2-2 2" /></>,
     left: <path d="m14 5-7 7 7 7" />,
     right: <path d="m10 5 7 7-7 7" />,
     reload: <><path d="M20 10a8 8 0 1 0-1 8M20 4v6h-6" /></>,
@@ -170,31 +170,31 @@ function App() {
     {slow && <small>请确认 Mac 上的 Gimme Remote 已打开，且手机和 Mac 在同一个 Wi-Fi 下。</small>}</p>;
 
   const inputButton = <button class={`control ${textOpen ? 'selected' : ''}`} onClick={() => setTextOpen(!textOpen)} disabled={!connection.enabled} aria-label="输入文本"><Icon name="keyboard" /><small>输入</small></button>;
+  const switchButton = <ControlButton action="switchApp" label="切换应用" icon="switchApp" shortcut />;
   // A player needs no browser navigation; it only keeps text input and app switching.
   const tools = layout === 'iina'
     ? <section class="toolbar two" aria-label="文本与切换工具">
       {inputButton}
-      <ControlButton action="switchApp" label="⌘ Tab" shortcut />
+      {switchButton}
     </section>
     : <>
-      <section class="toolbar" aria-label="浏览器与文本工具">
+      <section class="toolbar five" aria-label="浏览器与文本工具">
         <ControlButton action="back" label="后退" icon="left" shortcut />
         <ControlButton action="forward" label="前进" icon="right" shortcut />
         <ControlButton action="reload" label="刷新" icon="reload" shortcut />
         {inputButton}
+        {switchButton}
       </section>
       <div class="chips">
         <ControlButton action="address" label="地址栏" shortcut />
         <ControlButton action="previousTab" label="上一标签" shortcut />
         <ControlButton action="nextTab" label="下一标签" shortcut />
         {layout === 'browser' && <ControlButton action="escape" label="Esc" shortcut />}
-        <ControlButton action="switchApp" label="⌘ Tab" shortcut />
       </div>
     </>;
-  const title = layout === 'iina' ? 'IINA' : layout === 'browser' ? remote?.appName ?? '浏览器' : '播放控制';
   // The browser layout leads with the touchpad, so playback shrinks to one row.
   const player = <section class={`remote-panel ${layout === 'browser' ? 'compact' : ''}`} aria-label="播放器遥控">
-    <div class="panel-title">{title}</div>
+    {layout === 'browser' && <div class="panel-title">网页播放器</div>}
     {layout === 'browser'
       ? <div class="compact-row">
         <ControlButton action="seekBackward" label="快退" icon="back" repeat />
@@ -209,7 +209,7 @@ function App() {
         <div class="side">
           <ControlButton action="mute" label="静音" icon="mute" />
           <ControlButton action="fullscreen" label="全屏" icon="fullscreen" />
-          <ControlButton action="escape" label="Esc" icon="escape" shortcut />
+          <ControlButton action="escape" label="Esc" shortcut />
         </div>
         <div class="transport">
           <ControlButton action="playPause" label="播放 / 暂停" icon="playPause" className="play" />
@@ -220,7 +220,7 @@ function App() {
         </div>
         <div class="rocker" role="group" aria-label="播放器音量">
           <ControlButton action="volumeUp" label="音量 +" icon="plus" repeat />
-          <span>VOL</span>
+          <span>音量</span>
           <ControlButton action="volumeDown" label="音量 −" icon="minus" repeat />
         </div>
       </div>}
@@ -271,7 +271,7 @@ function App() {
       {!isStandalone() && <small>想放到主屏幕：先“分享 → 添加到主屏幕”，再从主屏幕图标打开并配对。</small>}
       <small>只传输按键操作，不会传输屏幕画面。</small>
     </section>}
-    <footer>Gimme Remote v{version}</footer>
+    <footer>Gimme Remote {version === 'dev' ? version : `v${version}`}</footer>
   </main>;
 }
 
