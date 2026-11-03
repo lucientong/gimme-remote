@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-15-intel]
+        runner: [macos-15, macos-15-intel, macos-26]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +49,7 @@ jobs:
           {
             echo '### Apple toolchain'
             echo '```text'
+            sw_vers
             swift --version
             xcodebuild -version
             echo '```'
@@ -56,7 +57,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: mac/.build
-          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mac/Package.resolved', 'mac/Package.swift') }}
+          key: swift-${{ matrix.runner }}-${{ runner.arch }}-${{ hashFiles('mac/Package.resolved', 'mac/Package.swift') }}
       - name: Run Swift tests
         run: |
           if swift test --package-path mac --jobs 4 > "$RUNNER_TEMP/swift-test.log" 2>&1; then
@@ -81,7 +82,20 @@ jobs:
           fi
       - run: bash scripts/test-core.sh
       - run: swift run --package-path mac --jobs 4 TransportChecks
-      - run: bash -n scripts/build-release.sh scripts/test-core.sh
+      - name: Check native menu panel rendering
+        timeout-minutes: 5
+        env:
+          GIMME_PANEL_CHECK_OUTPUT: ${{ runner.temp }}/menu-panel-checks
+        run: bash scripts/test-menu-panel.sh
+      - name: Upload menu panel screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-panel-${{ matrix.runner }}
+          path: ${{ runner.temp }}/menu-panel-checks
+          if-no-files-found: warn
+          retention-days: 7
+      - run: bash -n scripts/build-release.sh scripts/test-core.sh scripts/test-menu-panel.sh
 
   package:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
