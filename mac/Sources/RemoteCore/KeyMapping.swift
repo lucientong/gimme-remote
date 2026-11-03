@@ -74,7 +74,9 @@ public enum KeyMapping {
     }
     public static func layout(bundleId: String) -> String {
         if bundleId == "com.colliderli.iina" { return "iina" }
-        if ["com.apple.Safari", "com.google.Chrome", "org.mozilla.firefox", "com.microsoft.edgemac", "company.thebrowser.Browser"].contains(bundleId) {
+        if ["com.apple.Safari", "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary",
+            "org.mozilla.firefox", "com.microsoft.edgemac", "company.thebrowser.Browser",
+            "com.brave.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera"].contains(bundleId) {
             return "browser"
         }
         return "generic"

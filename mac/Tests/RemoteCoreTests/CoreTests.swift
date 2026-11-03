@@ -133,6 +133,9 @@ final class UnlockingVault: TokenVault, @unchecked Sendable {
     #expect(try KeyMapping.shortcut("previousTab") == KeyStroke(48, shift: true, control: true))
     #expect(KeyMapping.layout(bundleId: "com.colliderli.iina") == "iina")
     #expect(KeyMapping.layout(bundleId: "com.apple.Safari") == "browser")
+    #expect(KeyMapping.layout(bundleId: "com.google.Chrome.canary") == "browser")
+    #expect(KeyMapping.layout(bundleId: "com.brave.Browser") == "browser")
+    #expect(KeyMapping.layout(bundleId: "com.apple.finder") == "generic")
 }
 
 @Test func consecutiveNearbyTapsBecomeDoubleClicks() {

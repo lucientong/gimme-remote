@@ -33,8 +33,8 @@ function Icon({ name }: { name: string }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-function ControlButton({ action, label, icon, repeat = false, shortcut = false, className = '' }: {
-  action: string; label: string; icon?: string; repeat?: boolean; shortcut?: boolean; className?: string;
+function ControlButton({ action, label, short, icon, repeat = false, shortcut = false, className = '' }: {
+  action: string; label: string; short?: string; icon?: string; repeat?: boolean; shortcut?: boolean; className?: string;
 }) {
   const invoke = () => connection.send(shortcut ? 'input.keyboard.shortcut' : 'media.command', { action });
   const hold = useMemo(() => new RepeatButton(invoke), [action, shortcut]);
@@ -52,7 +52,8 @@ function ControlButton({ action, label, icon, repeat = false, shortcut = false, 
     onPointerUp={hold.stop} onPointerCancel={hold.stop} onLostPointerCapture={hold.stop}
     onClick={e => { if (!repeat || e.detail === 0) invoke(); }}>
     {icon ? <Icon name={icon} /> : <span>{label}</span>}
-    {icon && className !== 'play' && <small>{label}</small>}
+    {icon && className !== 'play' && <small>{short
+      ? <><span class="long-label">{label}</span><span class="short-label">{short}</span></> : label}</small>}
   </button>;
 }
 
@@ -170,7 +171,7 @@ function App() {
     {slow && <small>请确认 Mac 上的 Gimme Remote 已打开，且手机和 Mac 在同一个 Wi-Fi 下。</small>}</p>;
 
   const inputButton = <button class={`control ${textOpen ? 'selected' : ''}`} onClick={() => setTextOpen(!textOpen)} disabled={!connection.enabled} aria-label="输入文本"><Icon name="keyboard" /><small>输入</small></button>;
-  const switchButton = <ControlButton action="switchApp" label="切换应用" icon="switchApp" shortcut />;
+  const switchButton = <ControlButton action="switchApp" label="切换应用" short="切换" icon="switchApp" shortcut />;
   // A player needs no browser navigation; it only keeps text input and app switching.
   const tools = layout === 'iina'
     ? <section class="toolbar two" aria-label="文本与切换工具">

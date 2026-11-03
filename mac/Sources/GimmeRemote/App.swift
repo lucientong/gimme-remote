@@ -238,7 +238,8 @@ struct MenuPanel: View {
     @State private var addingDevice = false
     @State private var confirmRevoke = false
     @State private var copied = false
-    @State private var contentHeight: CGFloat = 620
+    // Starts near the smallest panel so the first open grows into place instead of shrinking.
+    @State private var contentHeight: CGFloat = 360
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     // With no paired phone the QR code is the next step; otherwise it waits behind "添加新设备".
     private var showPairing: Bool { model.paired == 0 || addingDevice }

@@ -84,6 +84,9 @@ struct CoreChecks {
         precondition(address == .init(37, command: true))
         precondition(volume.key == 126)
         precondition(nextTab == .init(48, control: true) && previousTab == .init(48, shift: true, control: true))
+        precondition(KeyMapping.layout(bundleId: "com.google.Chrome.canary") == "browser"
+            && KeyMapping.layout(bundleId: "com.brave.Browser") == "browser"
+            && KeyMapping.layout(bundleId: "com.apple.finder") == "generic")
         var clicks = ClickCounter()
         precondition(clicks.register(button: "left", at: .zero, time: 1, interval: 0.5) == 1)
         precondition(clicks.register(button: "left", at: CGPoint(x: 2, y: 2), time: 1.3, interval: 0.5) == 2)
@@ -91,6 +94,6 @@ struct CoreChecks {
         var scroll = ScrollAccumulator(), scrolled: Int32 = 0
         for _ in 0..<10 { scrolled += scroll.add(dx: 0, dy: -0.25).dy }
         precondition(scrolled == -2)
-        print("Core checks passed: protocol, Unicode, Origin, rate limit, one-time pairing, revocation, persistence failure, unreadable Keychain recovery, Keychain unlock restore, shortcuts, double-click, slow scroll.")
+        print("Core checks passed: protocol, Unicode, Origin, rate limit, one-time pairing, revocation, persistence failure, unreadable Keychain recovery, Keychain unlock restore, shortcuts, layouts, double-click, slow scroll.")
     }
 }
