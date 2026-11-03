@@ -87,6 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
         }
     }
+    /// Opening the App again from Finder or Launchpad lands here; show the panel instead of doing nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !popover.isShown { toggle() }
+        return false
+    }
     private var panelHeight: CGFloat {
         let screen = statusItem.button?.window?.screen ?? NSScreen.main
         return max(1, (screen?.visibleFrame.height ?? 800) - 64)
@@ -253,14 +258,12 @@ struct MenuPanel: View {
     }
     var body: some View {
         ScrollView {
+            // A GeometryReader preference reports 0 here on macOS 26 and collapses the panel to a blank sheet.
             content
-                .background(GeometryReader { proxy in
-                    Color.clear.preference(key: MenuPanelHeightKey.self, value: proxy.size.height)
-                })
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if $0 > 0 { contentHeight = $0 } }
         }
         .scrollBounceBehavior(.basedOnSize)
         .frame(width: 340, height: min(contentHeight, maximumHeight))
-        .onPreferenceChange(MenuPanelHeightKey.self) { contentHeight = $0 }
         .onChange(of: model.paired) { old, new in if new > old { addingDevice = false } }
     }
     private var content: some View {
@@ -411,9 +414,4 @@ struct MenuPanel: View {
                                                     from: output.extent.applying(CGAffineTransform(scaleX: 8, y: 8))) else { return nil }
         return NSImage(cgImage: image, size: NSSize(width: 176, height: 176))
     }
-}
-
-private struct MenuPanelHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
