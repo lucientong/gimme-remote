@@ -32,6 +32,9 @@ cp mac/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
 cp mac/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp -R web/dist/. "$APP/Contents/Resources/Web/"
+for localization in mac/Resources/*.lproj; do
+  cp -R "$localization" "$APP/Contents/Resources/"
+done
 
 case "$ARCH" in
   universal) architectures=(arm64 x86_64) ;;

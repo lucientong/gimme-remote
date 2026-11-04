@@ -1,12 +1,12 @@
 # gimme-remote
 
-[English](README.md) | **简体中文**
+[English](README.md) | **简体中文** | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 **用手机遥控接在电视上的 Mac。** 扫码即用，无需安装 App，局域网直连。Mac 端是 Swift 原生菜单栏 App，手机端是它在局域网内提供的网页。
 
-支持：播放控制（IINA / 浏览器）、触控板（含双击、滚动、拖动）、中文整段输入、浏览器快捷键、二维码配对、Keychain 保存的设备令牌、权限与锁屏提示、断线重连、登录启动、连接时防休眠，以及本机 `gimme` CLI。
+支持：播放控制（IINA / 浏览器）、触控板（含双击、滚动、拖动）、多语言整段输入、浏览器快捷键、二维码配对、Keychain 保存的设备令牌、权限与锁屏提示、断线重连、登录启动、连接时防休眠、中 / 英 / 日 / 韩四语界面，以及本机 `gimme` CLI。
 
-后续计划：截图点击、单台设备管理、英文界面。
+后续计划：截图点击、单台设备管理。
 
 ## 安装
 
@@ -22,6 +22,8 @@ open -a GimmeRemote
 体验最新测试版本可下载 [testing Release](https://github.com/lucientong/gimme-remote/releases/tag/testing)。它在 `master` 检查通过后更新，可能包含尚未进入正式版的改动。
 
 打开菜单栏 App，授权“辅助功能”；手机与 Mac 连接同一 Wi-Fi 后扫描二维码。想从主屏幕使用时，请先在手机 Chrome 中“分享 → 添加到主屏幕”，再从主屏幕图标打开并在其中输入配对码：iOS 的主屏幕网页与浏览器分开存储，在 Chrome 中完成的配对不会带过去。
+
+Mac 端和手机端分别跟随各自的系统语言，支持中文、英语、日语和韩语；其他语言默认使用英语。手动切换时，在 Mac 面板的“通用 → 语言”选择，或点击手机页面顶部的连接状态，在“设置 → 语言”选择。选择会保存并立即生效，已有错误提示也会更新。手机未配对时也能切换语言；切换保留当前连接和正在输入的文字。选择“跟随系统”可恢复自动检测。中文的不同地区与文字变体目前统一显示简体中文。
 
 音量按钮调节 **播放器音量**，电视总音量仍用电视遥控器。网页播放器快捷键受页面焦点与网站支持影响，始终可用触控板点击电视画面里的控件。不使用 Service Worker、云中继或任意脚本执行。
 
@@ -43,6 +45,7 @@ npm --prefix web test
 npm --prefix web run build
 swift build --package-path mac --jobs 4 --disable-index-store
 bash scripts/test-core.sh
+bash scripts/test-menu-panel.sh
 swift run --package-path mac --jobs 4 --disable-index-store TransportChecks
 
 # 完整 Xcode 环境
@@ -59,7 +62,9 @@ swift test --package-path mac --jobs 4
 npm --prefix web run dev
 ```
 
-只查看前端 UI 时，打开 Vite 地址后的 `/?preview=browser`（默认 `http://localhost:5173/?preview=browser`），或点击页面顶部的“预览遥控界面”。也可以用 `npm --prefix web run dev:preview` 启动并自动打开预览。无需服务端、配对或局域网连接；预览可切换分集、单视频、首尾集、IINA、通用、暂停和锁屏状态，按钮不会发送操作到 Mac。入口仅在 Vite 开发模式提供，正式版不启用。
+只查看前端 UI 时，打开 Vite 地址后的 `/?preview=browser`（默认 `http://localhost:5173/?preview=browser`），或点击页面顶部的“预览遥控界面”。也可以用 `npm --prefix web run dev:preview` 启动并自动打开预览。无需服务端、配对或局域网连接；预览可切换分集、单视频、首尾集、IINA、通用、暂停和锁屏状态，按钮不会发送操作到 Mac。点击顶部连接状态即可预览四种语言。入口仅在 Vite 开发模式提供，正式版不启用。
+
+手机翻译集中在 `web/src/i18n.ts`，Mac 翻译集中在 `mac/Sources/GimmeRemote/Localization.swift`，均检查词条完整性和占位符一致性。原生面板检查覆盖四语的配对展开 / 收起、权限引导和限高滚动。`mac/Resources/*.lproj/InfoPlist.strings` 中的系统权限说明跟随系统的 App 语言，由发布脚本复制。翻译随 App 和网页打包，无需额外下载资源。
 
 `TransportChecks` 是运行后退出的 HTTP/WebSocket 回归测试，监听的 `19371` 端口仅用于测试；它不是供前端连接的常驻原生服务端。
 

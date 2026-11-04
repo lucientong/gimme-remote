@@ -13,7 +13,9 @@ final class AppModel: ObservableObject {
     @Published var trusted = true
     @Published var locked = false
     @Published var running = true
-    @Published var failure: String?
+    @Published var failure: NativeNotice?
+    @Published var languageChoice = "zh"
+    var strings: NativeLocalization { NativeLocalization(choice: languageChoice) }
     @Published var vaultUnreadable = false
     @Published var paused = false
     @Published var preventSleep = false
@@ -80,6 +82,7 @@ private final class PanelChecks: NSObject, NSApplicationDelegate {
 
     private func runChecks() async throws {
         print("System: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        try checkTranslations()
         let expanded = try await check("pairing-expanded", height: 500...900)
         model.trusted = false
         let untrusted = try await check("permission-guide", height: (expanded + 80)...900)
@@ -111,6 +114,59 @@ private final class PanelChecks: NSObject, NSApplicationDelegate {
         popover.performClose(nil)
         show()
         _ = try await check("reopened", height: 299...301)
+
+        host.rootView = MenuPanel(model: model, maximumHeight: 900)
+        for language in InterfaceLanguage.allCases {
+            model.languageChoice = language.rawValue
+            model.trusted = true
+            model.paired = 0
+            model.failure = NativeNotice(key: .codeFailure)
+            _ = try await check("\(language.rawValue)-pairing", height: 500...900)
+            model.trusted = false
+            _ = try await check("\(language.rawValue)-permission", height: 600...900)
+            model.trusted = true
+            model.paired = 1
+            model.failure = nil
+            _ = try await check("\(language.rawValue)-connected", height: 250...700)
+            host.rootView = MenuPanel(model: model, maximumHeight: 300)
+            model.paired = 0
+            model.trusted = false
+            _ = try await check("\(language.rawValue)-limited", height: 299...301)
+            try await checkScrolling()
+            host.rootView = MenuPanel(model: model, maximumHeight: 900)
+        }
+    }
+
+    private func checkTranslations() throws {
+        func placeholders(_ text: String) -> [String] {
+            text.components(separatedBy: "{").dropFirst().compactMap { $0.components(separatedBy: "}").first }.sorted()
+        }
+        for key in NativeText.allCases {
+            guard let row = NativeLocalization.catalog[key], row.count == InterfaceLanguage.allCases.count,
+                  let english = row[.en] else { throw CheckFailure("Incomplete native catalog: \(key)") }
+            for language in InterfaceLanguage.allCases {
+                guard let text = row[language], !text.isEmpty, placeholders(text) == placeholders(english) else {
+                    throw CheckFailure("Invalid native translation: \(language).\(key)")
+                }
+            }
+        }
+        guard InterfaceLanguage.resolve(["fr", "ja-JP"]) == .ja,
+              InterfaceLanguage.resolve(["zh-Hant-TW"]) == .zh,
+              InterfaceLanguage.resolve(["ko_KR"]) == .ko,
+              InterfaceLanguage.resolve(["de"]) == .en else { throw CheckFailure("Native language resolution failed") }
+        let english = NativeLocalization(choice: "en", preferred: ["zh"])
+        guard english.paired(1) == "1 paired device", english.paired(2) == "2 paired devices",
+              NativeLocalization(choice: "auto", preferred: ["ko"]).language == .ko else {
+            throw CheckFailure("Native manual / automatic choice or plurals failed")
+        }
+        let suite = "gimme-localization-check-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("ja", forKey: NativeLocalization.preferenceKey)
+        guard NativeLocalization.savedChoice(in: defaults) == "ja" else { throw CheckFailure("Native preference not saved") }
+        defaults.set("bad", forKey: NativeLocalization.preferenceKey)
+        guard NativeLocalization.savedChoice(in: defaults) == "auto" else { throw CheckFailure("Invalid native preference not ignored") }
+        print("PASS: native catalogs, placeholders, language resolution, persistence, and plurals")
     }
 
     private func check(_ name: String, height: ClosedRange<CGFloat>) async throws -> CGFloat {

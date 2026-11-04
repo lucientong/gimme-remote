@@ -13,13 +13,14 @@ struct MenuPanel: View {
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     // With no paired phone the QR code is the next step; otherwise it waits behind "添加新设备".
     private var showPairing: Bool { model.paired == 0 || addingDevice }
+    private var strings: NativeLocalization { model.strings }
     private var status: (text: String, color: Color) {
-        if !model.running { return ("正在启动…", .secondary) }
-        if !model.trusted { return ("需要授权", .orange) }
-        if model.paused { return ("已暂停", .secondary) }
-        if model.locked { return ("Mac 已锁定", .orange) }
-        if model.connected > 0 { return ("\(model.connected) 台已连接", .green) }
-        return ("等待手机连接", .secondary)
+        if !model.running { return (strings.text(.starting), .secondary) }
+        if !model.trusted { return (strings.text(.needsPermission), .orange) }
+        if model.paused { return (strings.text(.paused), .secondary) }
+        if model.locked { return (strings.text(.locked), .orange) }
+        if model.connected > 0 { return (strings.connected(model.connected), .green) }
+        return (strings.text(.waiting), .secondary)
     }
     var body: some View {
         ScrollView {
@@ -37,9 +38,9 @@ struct MenuPanel: View {
             if !model.trusted { accessibilityGuide }
             if model.vaultUnreadable {
                 card(tint: .orange) {
-                    Text("无法读取钥匙串中的已配对设备，手机需要重新配对。可点“更新配对码”后重新扫码。")
+                    Text(strings.text(.vaultWarning))
                         .font(.caption).fixedSize(horizontal: false, vertical: true)
-                    Button("重新读取钥匙串") { Task { await model.retryVault() } }.buttonStyle(.link).font(.caption)
+                    Button(strings.text(.retryVault)) { Task { await model.retryVault() } }.buttonStyle(.link).font(.caption)
                 }
             }
             pairing
@@ -47,15 +48,15 @@ struct MenuPanel: View {
             groups
             if let failure = model.failure {
                 HStack(alignment: .top) {
-                    Text(failure).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    Text(strings.text(failure.key, ["detail": failure.detail])).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    Button("关闭") { model.failure = nil }.buttonStyle(.link).font(.caption)
+                    Button(strings.text(.close)) { model.failure = nil }.buttonStyle(.link).font(.caption)
                 }
             }
             HStack {
                 Text("Gimme Remote \(version == "dev" ? version : "v\(version)")").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
-                Button("退出") { NSApp.terminate(nil) }.controlSize(.small)
+                Button(strings.text(.quit)) { NSApp.terminate(nil) }.controlSize(.small)
             }
         }
         .padding(16).frame(width: 340).fixedSize(horizontal: false, vertical: true)
@@ -65,32 +66,32 @@ struct MenuPanel: View {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Gimme Remote").font(.headline)
-                HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(status.text).font(.caption.weight(.medium)).foregroundStyle(status.color)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(status.color.opacity(0.15), in: Capsule())
-                    Text("\(model.paired) 台已配对").font(.caption).foregroundStyle(.secondary)
+                    Text(strings.paired(model.paired)).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
-            Toggle("遥控", isOn: Binding(get: { !model.paused }, set: { value in Task { await model.setPaused(!value) } }))
-                .toggleStyle(.switch).labelsHidden().help(model.paused ? "恢复遥控" : "暂停遥控")
+            Toggle(strings.text(.remote), isOn: Binding(get: { !model.paused }, set: { value in Task { await model.setPaused(!value) } }))
+                .toggleStyle(.switch).labelsHidden().help(strings.text(model.paused ? .resume : .pause))
         }
     }
     private var accessibilityGuide: some View {
         card(tint: .orange) {
-            Text("需要辅助功能权限，手机才能控制这台 Mac").font(.callout.weight(.semibold))
-            Text("① 点下面的按钮打开系统设置\n② 打开 Gimme Remote 的开关").font(.caption)
-            Button("授权辅助功能") { AppInspector.requestAccessibility() }.buttonStyle(.borderedProminent)
+            Text(strings.text(.permissionTitle)).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            Text(strings.text(.permissionSteps)).font(.caption).fixedSize(horizontal: false, vertical: true)
+            Button(strings.text(.grantPermission)) { AppInspector.requestAccessibility() }.buttonStyle(.borderedProminent)
             // An update changes the code signature; macOS may keep a stale entry switched on.
-            Text("已经打开仍无效：在列表中选中它点“−”删除，再重新添加。")
+            Text(strings.text(.permissionRetry))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
     @ViewBuilder private var pairing: some View {
         if !showPairing {
             Button { addingDevice = true; Task { await model.refreshCode() } } label: {
-                Label("添加新设备", systemImage: "plus.circle").frame(maxWidth: .infinity)
+                Label(strings.text(.addDevice), systemImage: "plus.circle").frame(maxWidth: .infinity)
             }.controlSize(.large)
         } else if !model.code.isEmpty, let image = qr(model.pairURL) {
             VStack(spacing: 8) {
@@ -103,23 +104,23 @@ struct MenuPanel: View {
                 .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
                 Text("\(model.code.prefix(3)) \(model.code.suffix(3))")
                     .font(.system(size: 26, weight: .semibold, design: .monospaced)).kerning(3)
-                Text("用手机相机扫码 · 2 分钟内有效").font(.caption).foregroundStyle(.secondary)
+                Text(strings.text(.scan)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Button("更新配对码") { Task { await model.refreshCode() } }
-                    if model.paired > 0 { Button("收起") { addingDevice = false } }
+                    Button(strings.text(.refreshCode)) { Task { await model.refreshCode() } }
+                    if model.paired > 0 { Button(strings.text(.collapse)) { addingDevice = false } }
                 }.controlSize(.small)
             }.frame(maxWidth: .infinity)
         } else {
             VStack(spacing: 8) {
-                Text("配对码已失效，点“更新配对码”重新生成").font(.callout).foregroundStyle(.secondary)
-                Button("更新配对码") { Task { await model.refreshCode() } }
+                Text(strings.text(.expiredCode)).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button(strings.text(.refreshCode)) { Task { await model.refreshCode() } }
             }.frame(maxWidth: .infinity)
         }
     }
     private var address: some View {
         HStack(spacing: 6) {
             if model.addresses.count > 1 {
-                Picker("连接地址", selection: $model.url) {
+                Picker(strings.text(.address), selection: $model.url) {
                     ForEach(model.addresses, id: \.self) { address in Text(address).tag(address) }
                 }.labelsHidden().controlSize(.small)
             } else {
@@ -131,34 +132,44 @@ struct MenuPanel: View {
                 copied = true
                 Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
             } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
-                .buttonStyle(.borderless).help("复制地址")
+                .buttonStyle(.borderless).help(strings.text(.copyAddress))
         }
     }
     private var groups: some View {
         VStack(alignment: .leading, spacing: 10) {
-            GroupBox("遥控") {
-                Toggle("手机连接时，不让显示器休眠", isOn: $model.preventSleep).frame(maxWidth: .infinity, alignment: .leading)
+            GroupBox(strings.text(.remote)) {
+                Toggle(isOn: $model.preventSleep) {
+                    Text(strings.text(.preventSleep)).fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            GroupBox("通用") {
-                Toggle("登录时启动", isOn: Binding(get: { model.loginEnabled }, set: { model.setLogin($0) }))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            GroupBox(strings.text(.general)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(strings.text(.launchAtLogin), isOn: Binding(get: { model.loginEnabled }, set: { model.setLogin($0) }))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Picker(strings.text(.language), selection: $model.languageChoice) {
+                        Text(strings.text(.automatic)).tag("auto")
+                        ForEach(InterfaceLanguage.allCases, id: \.self) { language in
+                            Text(language.name).tag(language.rawValue)
+                        }
+                    }.controlSize(.small)
+                }
             }
-            GroupBox("设备") {
+            GroupBox(strings.text(.devices)) {
                 // Revoking forces every phone to scan again, so it takes a second, explicit click.
                 if confirmRevoke {
-                    HStack {
-                        Text("所有手机都要重新配对").font(.caption)
-                        Spacer()
-                        Button("取消") { confirmRevoke = false }
-                        Button("撤销全部", role: .destructive) { confirmRevoke = false; Task { await model.revoke() } }
-                            .tint(.red).buttonStyle(.borderedProminent)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(strings.text(.revokeWarning)).font(.caption).fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Button(strings.text(.cancel)) { confirmRevoke = false }
+                            Button(strings.text(.revoke), role: .destructive) { confirmRevoke = false; Task { await model.revoke() } }
+                                .tint(.red).buttonStyle(.borderedProminent)
+                        }
                     }.controlSize(.small)
                 } else {
-                    HStack {
-                        Button("断开全部设备") { Task { await model.disconnect() } }
-                        Button("撤销全部配对…") { confirmRevoke = true }.foregroundStyle(.red)
-                        Spacer(minLength: 0)
-                    }.controlSize(.small)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button(strings.text(.disconnect)) { Task { await model.disconnect() } }
+                        Button(strings.text(.revokeAll)) { confirmRevoke = true }.foregroundStyle(.red)
+                    }.frame(maxWidth: .infinity, alignment: .leading).controlSize(.small)
                 }
             }
         }

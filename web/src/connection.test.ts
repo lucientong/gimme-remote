@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Connection } from './connection';
 import type { Message, RemoteState } from './protocol';
+import { errorText, LocalizedError, setLanguage } from './i18n';
 
 class Socket {
   static readonly OPEN = 1;
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.stubGlobal('location', { origin: 'http://mac.local:9271', pathname: '/', search: '' });
   vi.stubGlobal('history', { replaceState: vi.fn() });
   vi.stubGlobal('document', { visibilityState: 'visible' });
+  setLanguage('zh');
   connection = new Connection();
 });
 afterEach(() => {
@@ -156,5 +158,36 @@ describe('connection lifecycle', () => {
     vi.advanceTimersByTime(30_000);
     expect(Socket.instances).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('switches an existing error without reconnecting or changing tokens and protocol commands', async () => {
+    const socket = authenticate();
+    const request = connection.request('input.text.insert', { text: '日本語 한국어 中文' });
+    const response = request.catch(error => error as LocalizedError);
+    const command = socket.sent.at(-1)!;
+    socket.message('error.input', { error: 'inputFailed' }, command.requestId);
+    const error = await response as LocalizedError;
+    expect(error.message).toBe(errorText('inputFailed'));
+    setLanguage('ja');
+    expect(error.message).toBe(errorText('inputFailed'));
+    expect(error.message).toContain('再試行');
+    expect(connection.state.error).toBe('inputFailed');
+    expect(connection.enabled).toBe(true);
+    expect(stored.get('gimme.token')).toBe('"saved-token"');
+    expect(Socket.instances).toHaveLength(1);
+    expect(command).toMatchObject({ type: 'input.text.insert', payload: { text: '日本語 한국어 中文' } });
+  });
+
+  it('localizes pairing errors and unknown server errors', async () => {
+    connection.connect();
+    const socket = Socket.instances[0];
+    socket.open();
+    setLanguage('ko');
+    const request = connection.request('session.pair', { code: '123456' });
+    const response = request.catch(error => error as LocalizedError);
+    socket.message('error.session', { error: 'invalidPairingCode' }, socket.sent.at(-1)!.requestId);
+    expect((await response as LocalizedError).message).toBe(errorText('invalidPairingCode'));
+    socket.message('error.input', { error: 'futureServerError' });
+    expect(errorText(connection.state.error)).toBe(errorText('operationFailed'));
   });
 });

@@ -1,0 +1,287 @@
+import { readStored, store } from './protocol';
+
+export const languages = { zh: '中文', en: 'English', ja: '日本語', ko: '한국어' } as const;
+export type Language = keyof typeof languages;
+export type LanguageChoice = Language | 'auto';
+
+const en = {
+  language: 'Language', auto: 'System default', settings: 'Settings', done: 'Done',
+  speed: 'Pointer speed', acceleration: 'Pointer acceleration',
+  homeScreen: 'Mobile Chrome → Share → Add to Home Screen for quick access. The Home Screen app pairs separately from the browser. On first use, refresh the pairing code on your Mac and enter it here.',
+  touchpad: 'Touchpad: move with one finger, tap to click, use two fingers to scroll or tap for right-click, hold to drag',
+  padHint: 'Tap to click · Two fingers to scroll · Hold to drag',
+  lockedHint: 'Mac is locked. Unlock it on your Mac.',
+  pausedHint: 'Remote input is paused. Resume it from the Mac menu bar.',
+  accessibilityHint: 'Grant Accessibility permission from the Mac menu bar.',
+  disconnected: 'Disconnected', connecting: 'Connecting', unpaired: 'Not paired', offline: 'Not connected',
+  locked: 'Locked', paused: 'Paused', untrusted: 'Permission needed', connected: 'Connected',
+  waiting: 'Connecting to Mac…',
+  waitingHint: 'Make sure Gimme Remote is open on your Mac and both devices are on the same Wi-Fi.',
+  input: 'Text input', inputShort: 'Type', switchApp: 'Switch app', switchShort: 'Switch',
+  textTools: 'Text and app tools', browserTools: 'Browser and text tools',
+  back: 'Browser back', backShort: 'Back', forward: 'Browser forward', forwardShort: 'Forward',
+  reload: 'Reload', address: 'Address bar', previousTab: 'Previous tab', nextTab: 'Next tab',
+  historyHint: 'Browser back / forward navigate browsing history',
+  player: 'Player controls', webPlayer: 'Web player', episodes: 'Episodes and playback',
+  previousEpisode: 'Previous episode', nextEpisode: 'Next episode', playPause: 'Play / Pause',
+  seekBackward: 'Rewind', seekForward: 'Seek forward', volumeDown: 'Volume −', volumeUp: 'Volume +',
+  mute: 'Mute', fullscreen: 'Full screen', escape: 'Esc', enter: 'Enter',
+  volume: 'Volume', playerVolume: 'Player volume', volumeHint: 'Player volume · Use the TV remote for TV volume',
+  target: 'Connection status and settings', preview: 'Preview', previewTitle: 'UI preview',
+  previewBack: 'Connection page', previewScene: 'Preview state',
+  previewHint: 'No Mac needed. Controls only demonstrate actions on this page.',
+  previewEntry: 'Preview the remote · No Mac needed',
+  previewText: 'Text input previewed. Nothing sent to Mac.',
+  previewAction: 'Previewed “{action}”. Nothing sent to Mac.',
+  previewClick: 'Mouse click previewed. Nothing sent to Mac.',
+  sceneBrowser: 'Chrome · Series', sceneSingle: 'Chrome · Single video',
+  sceneFirst: 'Chrome · First episode', sceneLast: 'Chrome · Last episode',
+  sceneIina: 'IINA', sceneGeneric: 'Generic remote', scenePaused: 'Remote input paused', sceneLocked: 'Mac locked',
+  textLabel: 'Type into the focused field on Mac', textPlaceholder: 'Search terms, a URL, or any text…',
+  sending: 'Sending…', sendText: 'Send text', sent: 'Text sent',
+  disconnectedHint: 'Mac disconnected this phone. Your pairing is saved.', reconnect: 'Reconnect',
+  pairTitle: 'Connect your Mac', wifiHint: 'Keep your phone and Mac on the same Wi-Fi.',
+  standalonePair: 'Pair the Home Screen app separately: open Gimme Remote in the Mac menu bar, refresh the pairing code, then enter the new 6-digit code.',
+  scannedPair: 'The QR code filled in your pairing code. Tap “Connect Mac”.',
+  manualPair: 'Open Gimme Remote in the Mac menu bar and enter its 6-digit pairing code.',
+  pairCode: 'Pairing code', pairing: 'Pairing…', pair: 'Connect Mac',
+  addHome: 'For Home Screen access: in mobile Chrome, choose Share → Add to Home Screen, then open the icon and pair there.',
+  inputOnly: 'Only input commands are sent, without screen sharing.',
+  unauthorized: 'Pairing has expired. Pair again.',
+  invalidPairingCode: 'Pairing code is incorrect or expired. Refresh it on your Mac.',
+  rateLimited: 'Too many requests. Reconnect in a moment.',
+  macLocked: 'Mac is locked. Unlock it on your Mac.',
+  accessibilityRequired: 'Grant Accessibility permission from the Mac menu bar.',
+  servicePaused: 'Remote input is paused. Resume it from the Mac menu bar.',
+  keychainUnavailable: 'Mac Keychain is unavailable. Unlock it and retry.',
+  deviceLimit: 'Device limit reached. Revoke old pairings from the Mac menu bar.',
+  pointerBusy: 'Another phone is dragging. Try again shortly.',
+  protocolVersion: 'Protocol versions do not match. Refresh the page.',
+  inputFailed: 'Mac could not send the input. Try again.',
+  episodeUnavailable: 'This player has no available control for that episode action.',
+  invalidPayload: 'Invalid command. Refresh the page and retry.',
+  unsupportedMessage: 'This operation needs a newer Mac app. Update Gimme Remote.',
+  messageTooLarge: 'Text is too long. Send it in smaller parts.',
+  operationFailed: 'The operation did not finish. Try again.',
+  invalidMessage: 'Unrecognised message received. Refresh the page.',
+  connectionClosed: 'Connection closed', notReady: 'Not connected to a controllable Mac',
+  timeout: 'Request timed out. Try again.', pageClosed: 'Page closed',
+  previewUnavailable: 'Controls are unavailable in this preview state.',
+};
+export type TextKey = keyof typeof en;
+type Catalog = Record<TextKey, string>;
+const zh: Catalog = {
+  language: '语言', auto: '跟随系统', settings: '设置', done: '完成',
+  speed: '指针速度', acceleration: '指针加速',
+  homeScreen: '手机 Chrome → 分享 → 添加到主屏幕，下次一键打开。主屏幕入口与浏览器分开保存配对，首次打开需在 Mac 上更新配对码后再输入一次。',
+  touchpad: '触控板：单指移动，轻点单击，双指滚动或轻点右键，按住后拖动',
+  padHint: '轻点点击 · 双指滚动 · 按住拖动',
+  lockedHint: 'Mac 已锁定，请在 Mac 上解锁', pausedHint: '遥控已暂停，请在 Mac 菜单栏恢复',
+  accessibilityHint: '请先在 Mac 菜单栏授权辅助功能',
+  disconnected: '已断开', connecting: '连接中', unpaired: '未配对', offline: '未连接',
+  locked: '已锁定', paused: '已暂停', untrusted: '未授权', connected: '已连接',
+  waiting: '正在连接 Mac…', waitingHint: '请确认 Mac 上的 Gimme Remote 已打开，且手机和 Mac 在同一个 Wi-Fi 下。',
+  input: '输入文本', inputShort: '输入', switchApp: '切换应用', switchShort: '切换',
+  textTools: '文本与切换工具', browserTools: '浏览器与文本工具',
+  back: '网页后退', backShort: '后退', forward: '网页前进', forwardShort: '前进',
+  reload: '刷新', address: '地址栏', previousTab: '上一标签', nextTab: '下一标签',
+  historyHint: '网页前进 / 后退切换浏览历史',
+  player: '播放器遥控', webPlayer: '网页播放器', episodes: '上下集与播放',
+  previousEpisode: '上一集', nextEpisode: '下一集', playPause: '播放 / 暂停',
+  seekBackward: '快退', seekForward: '快进', volumeDown: '音量 −', volumeUp: '音量 +',
+  mute: '静音', fullscreen: '全屏', escape: 'Esc', enter: '回车',
+  volume: '音量', playerVolume: '播放器音量', volumeHint: '调节播放器音量 · 电视总音量用电视遥控器',
+  target: '连接状态和设置', preview: '预览', previewTitle: '界面预览',
+  previewBack: '返回连接页', previewScene: '预览状态',
+  previewHint: '无需连接 Mac，按钮操作仅在本页演示。', previewEntry: '预览遥控界面 · 无需连接 Mac',
+  previewText: '已预览文字输入，未发送到 Mac', previewAction: '已预览「{action}」，未发送到 Mac',
+  previewClick: '已预览鼠标点击，未发送到 Mac',
+  sceneBrowser: 'Chrome · 分集视频', sceneSingle: 'Chrome · 单视频', sceneFirst: 'Chrome · 第一集',
+  sceneLast: 'Chrome · 最后一集', sceneIina: 'IINA', sceneGeneric: '通用遥控',
+  scenePaused: '遥控已暂停', sceneLocked: 'Mac 已锁定',
+  textLabel: '输入到 Mac 当前焦点', textPlaceholder: '搜索词、网址或任何文字…',
+  sending: '发送中…', sendText: '发送整段文字', sent: '已发送输入',
+  disconnectedHint: 'Mac 已断开这台手机，配对仍然保留。', reconnect: '重新连接',
+  pairTitle: '连接你的 Mac', wifiHint: '确认手机和 Mac 在同一个 Wi-Fi 下。',
+  standalonePair: '主屏幕入口需要单独配对一次：在 Mac 菜单栏的 Gimme Remote 点“更新配对码”，再输入新的 6 位码。',
+  scannedPair: '配对码已从二维码填好，点“连接 Mac”即可。',
+  manualPair: '在 Mac 菜单栏打开 Gimme Remote，输入面板上的 6 位配对码。',
+  pairCode: '配对码', pairing: '配对中…', pair: '连接 Mac',
+  addHome: '想放到主屏幕：先在手机 Chrome 中“分享 → 添加到主屏幕”，再从主屏幕图标打开并配对。',
+  inputOnly: '只传输按键操作，不会传输屏幕画面。',
+  unauthorized: '配对已失效，请重新配对', invalidPairingCode: '配对码错误或已过期，请在 Mac 上更新',
+  rateLimited: '操作过于频繁，请稍后重新连接', macLocked: 'Mac 已锁定，请在 Mac 上解锁',
+  accessibilityRequired: '请在 Mac 菜单栏授权辅助功能', servicePaused: '遥控已暂停，请在 Mac 菜单栏恢复',
+  keychainUnavailable: 'Mac 钥匙串不可用，请解锁后重试', deviceLimit: '配对设备已满，请在 Mac 菜单栏撤销旧配对',
+  pointerBusy: '另一台手机正在拖动，请稍后再试', protocolVersion: '协议版本不匹配，请刷新页面',
+  inputFailed: 'Mac 未能发送输入，请重试', episodeUnavailable: '当前播放器没有可用的对应上下集控件',
+  invalidPayload: '指令无效，请刷新页面后重试', unsupportedMessage: 'Mac 端版本不支持该操作，请更新 Gimme Remote',
+  messageTooLarge: '内容过长，请分段发送', operationFailed: '操作未完成，请重试',
+  invalidMessage: '收到无法识别的消息，请刷新页面', connectionClosed: '连接已断开',
+  notReady: '尚未连接到可控制的 Mac', timeout: '操作超时，请重试', pageClosed: '页面已关闭',
+  previewUnavailable: '当前预览状态无法操作',
+};
+const ja: Catalog = {
+  language: '言語', auto: 'システムに合わせる', settings: '設定', done: '完了',
+  speed: 'ポインタの速度', acceleration: 'ポインタの加速',
+  homeScreen: 'スマートフォンの Chrome → 共有 → ホーム画面に追加。ホーム画面のアプリとブラウザは個別にペアリングします。初回は Mac でペアリングコードを更新し、ここに入力してください。',
+  touchpad: 'タッチパッド：1本指で移動、タップでクリック、2本指でスクロールまたはタップで右クリック、長押しでドラッグ',
+  padHint: 'タップでクリック · 2本指でスクロール · 長押しでドラッグ',
+  lockedHint: 'Mac がロックされています。Mac で解除してください。',
+  pausedHint: 'リモート操作は一時停止中です。Mac のメニューバーから再開してください。',
+  accessibilityHint: 'Mac のメニューバーからアクセシビリティを許可してください。',
+  disconnected: '切断済み', connecting: '接続中', unpaired: '未ペアリング', offline: '未接続',
+  locked: 'ロック中', paused: '一時停止中', untrusted: '許可が必要', connected: '接続済み',
+  waiting: 'Mac に接続中…', waitingHint: 'Mac で Gimme Remote を開き、両方の端末を同じ Wi-Fi に接続してください。',
+  input: 'テキスト入力', inputShort: '入力', switchApp: 'アプリ切替', switchShort: '切替',
+  textTools: '入力とアプリ切替', browserTools: 'ブラウザと入力ツール',
+  back: 'ブラウザで戻る', backShort: '戻る', forward: 'ブラウザで進む', forwardShort: '進む',
+  reload: '再読み込み', address: 'アドレスバー', previousTab: '前のタブ', nextTab: '次のタブ',
+  historyHint: 'ブラウザの戻る / 進むで閲覧履歴を移動',
+  player: 'プレーヤー操作', webPlayer: 'Web プレーヤー', episodes: 'エピソードと再生',
+  previousEpisode: '前のエピソード', nextEpisode: '次のエピソード', playPause: '再生 / 一時停止',
+  seekBackward: '巻き戻し', seekForward: '早送り', volumeDown: '音量 −', volumeUp: '音量 +',
+  mute: 'ミュート', fullscreen: '全画面', escape: 'Esc', enter: 'Enter',
+  volume: '音量', playerVolume: 'プレーヤーの音量', volumeHint: 'プレーヤーの音量 · TV の音量は TV のリモコンで',
+  target: '接続状態と設定', preview: 'プレビュー', previewTitle: '画面プレビュー',
+  previewBack: '接続画面へ', previewScene: 'プレビュー状態',
+  previewHint: 'Mac は不要です。このページ内で操作を確認できます。', previewEntry: 'リモコンをプレビュー · Mac 不要',
+  previewText: 'テキスト入力をプレビューしました。Mac には送信していません。',
+  previewAction: '「{action}」をプレビューしました。Mac には送信していません。',
+  previewClick: 'クリックをプレビューしました。Mac には送信していません。',
+  sceneBrowser: 'Chrome · シリーズ動画', sceneSingle: 'Chrome · 単独の動画', sceneFirst: 'Chrome · 最初のエピソード',
+  sceneLast: 'Chrome · 最後のエピソード', sceneIina: 'IINA', sceneGeneric: '汎用リモコン',
+  scenePaused: 'リモート操作を一時停止', sceneLocked: 'Mac をロック',
+  textLabel: 'Mac で選択中の入力欄に送信', textPlaceholder: '検索語、URL、その他のテキスト…',
+  sending: '送信中…', sendText: 'テキストを送信', sent: '送信しました',
+  disconnectedHint: 'Mac がこの端末を切断しました。ペアリングは保存されています。', reconnect: '再接続',
+  pairTitle: 'Mac に接続', wifiHint: 'スマートフォンと Mac を同じ Wi-Fi に接続してください。',
+  standalonePair: 'ホーム画面のアプリを個別にペアリングします。Mac のメニューバーで Gimme Remote を開き、コードを更新して新しい6桁のコードを入力してください。',
+  scannedPair: 'QR コードから入力済みです。「Mac に接続」をタップしてください。',
+  manualPair: 'Mac のメニューバーで Gimme Remote を開き、6桁のペアリングコードを入力してください。',
+  pairCode: 'ペアリングコード', pairing: 'ペアリング中…', pair: 'Mac に接続',
+  addHome: 'ホーム画面で使うには：スマートフォンの Chrome で「共有 → ホーム画面に追加」を選び、アイコンから開いてペアリングしてください。',
+  inputOnly: '操作コマンドのみを送信し、画面は共有しません。',
+  unauthorized: 'ペアリングが無効です。再度ペアリングしてください。',
+  invalidPairingCode: 'コードが間違っているか期限切れです。Mac で更新してください。',
+  rateLimited: '操作が多すぎます。少し待って再接続してください。',
+  macLocked: 'Mac がロックされています。Mac で解除してください。',
+  accessibilityRequired: 'Mac のメニューバーからアクセシビリティを許可してください。',
+  servicePaused: 'リモート操作は一時停止中です。Mac のメニューバーから再開してください。',
+  keychainUnavailable: 'Mac のキーチェーンを利用できません。ロックを解除して再試行してください。',
+  deviceLimit: '端末数の上限です。Mac のメニューバーで古いペアリングを解除してください。',
+  pointerBusy: '別の端末がドラッグ中です。少し待ってください。',
+  protocolVersion: 'プロトコルのバージョンが一致しません。ページを更新してください。',
+  inputFailed: 'Mac で入力できませんでした。再試行してください。',
+  episodeUnavailable: 'このプレーヤーには該当するエピソード操作がありません。',
+  invalidPayload: '無効なコマンドです。ページを更新して再試行してください。',
+  unsupportedMessage: 'Mac アプリがこの操作に未対応です。Gimme Remote を更新してください。',
+  messageTooLarge: 'テキストが長すぎます。分けて送信してください。',
+  operationFailed: '操作が完了しませんでした。再試行してください。',
+  invalidMessage: '不明なメッセージを受信しました。ページを更新してください。',
+  connectionClosed: '接続が切れました', notReady: '操作可能な Mac に接続していません',
+  timeout: '操作がタイムアウトしました。再試行してください。', pageClosed: 'ページが閉じられました',
+  previewUnavailable: 'このプレビュー状態では操作できません。',
+};
+const ko: Catalog = {
+  language: '언어', auto: '시스템 설정 따르기', settings: '설정', done: '완료',
+  speed: '포인터 속도', acceleration: '포인터 가속',
+  homeScreen: '휴대폰 Chrome → 공유 → 홈 화면에 추가하면 빠르게 열 수 있습니다. 홈 화면 앱과 브라우저는 별도로 페어링됩니다. 처음 열 때 Mac에서 페어링 코드를 갱신한 후 여기에 입력하세요.',
+  touchpad: '터치패드: 한 손가락으로 이동, 탭하여 클릭, 두 손가락으로 스크롤 또는 탭하여 오른쪽 클릭, 길게 눌러 드래그',
+  padHint: '탭하여 클릭 · 두 손가락 스크롤 · 길게 눌러 드래그',
+  lockedHint: 'Mac이 잠겨 있습니다. Mac에서 잠금을 해제하세요.',
+  pausedHint: '원격 조작이 일시 정지되었습니다. Mac 메뉴 막대에서 재개하세요.',
+  accessibilityHint: 'Mac 메뉴 막대에서 손쉬운 사용 권한을 허용하세요.',
+  disconnected: '연결 해제됨', connecting: '연결 중', unpaired: '페어링 안 됨', offline: '연결 안 됨',
+  locked: '잠김', paused: '일시 정지됨', untrusted: '권한 필요', connected: '연결됨',
+  waiting: 'Mac에 연결 중…', waitingHint: 'Mac에서 Gimme Remote를 열고 두 기기를 같은 Wi-Fi에 연결하세요.',
+  input: '텍스트 입력', inputShort: '입력', switchApp: '앱 전환', switchShort: '전환',
+  textTools: '텍스트 및 앱 도구', browserTools: '브라우저 및 텍스트 도구',
+  back: '브라우저 뒤로', backShort: '뒤로', forward: '브라우저 앞으로', forwardShort: '앞으로',
+  reload: '새로고침', address: '주소 표시줄', previousTab: '이전 탭', nextTab: '다음 탭',
+  historyHint: '브라우저 뒤로 / 앞으로는 방문 기록을 이동합니다',
+  player: '플레이어 조작', webPlayer: '웹 플레이어', episodes: '에피소드 및 재생',
+  previousEpisode: '이전 에피소드', nextEpisode: '다음 에피소드', playPause: '재생 / 일시 정지',
+  seekBackward: '되감기', seekForward: '빨리 감기', volumeDown: '음량 −', volumeUp: '음량 +',
+  mute: '음소거', fullscreen: '전체 화면', escape: 'Esc', enter: 'Enter',
+  volume: '음량', playerVolume: '플레이어 음량', volumeHint: '플레이어 음량 · TV 음량은 TV 리모컨으로 조절',
+  target: '연결 상태 및 설정', preview: '미리보기', previewTitle: '화면 미리보기',
+  previewBack: '연결 화면', previewScene: '미리보기 상태',
+  previewHint: 'Mac 없이 이 페이지에서만 조작을 미리 볼 수 있습니다.', previewEntry: '리모컨 미리보기 · Mac 연결 불필요',
+  previewText: '텍스트 입력을 미리 보았습니다. Mac에 전송하지 않았습니다.',
+  previewAction: '“{action}” 미리보기. Mac에 전송하지 않았습니다.',
+  previewClick: '마우스 클릭을 미리 보았습니다. Mac에 전송하지 않았습니다.',
+  sceneBrowser: 'Chrome · 시리즈 영상', sceneSingle: 'Chrome · 단일 영상', sceneFirst: 'Chrome · 첫 에피소드',
+  sceneLast: 'Chrome · 마지막 에피소드', sceneIina: 'IINA', sceneGeneric: '일반 리모컨',
+  scenePaused: '원격 조작 일시 정지', sceneLocked: 'Mac 잠김',
+  textLabel: 'Mac에서 선택된 입력란에 입력', textPlaceholder: '검색어, URL 또는 텍스트…',
+  sending: '전송 중…', sendText: '텍스트 전송', sent: '전송했습니다',
+  disconnectedHint: 'Mac이 이 휴대폰의 연결을 해제했습니다. 페어링은 유지됩니다.', reconnect: '다시 연결',
+  pairTitle: 'Mac 연결하기', wifiHint: '휴대폰과 Mac을 같은 Wi-Fi에 연결하세요.',
+  standalonePair: '홈 화면 앱은 별도로 페어링해야 합니다. Mac 메뉴 막대에서 Gimme Remote의 코드를 갱신한 후 새 6자리 코드를 입력하세요.',
+  scannedPair: 'QR 코드로 페어링 코드가 입력되었습니다. “Mac 연결”을 누르세요.',
+  manualPair: 'Mac 메뉴 막대에서 Gimme Remote를 열고 6자리 페어링 코드를 입력하세요.',
+  pairCode: '페어링 코드', pairing: '페어링 중…', pair: 'Mac 연결',
+  addHome: '홈 화면에서 사용하려면 휴대폰 Chrome에서 “공유 → 홈 화면에 추가”를 선택한 후 아이콘을 열어 페어링하세요.',
+  inputOnly: '화면 공유 없이 입력 명령만 전송합니다.',
+  unauthorized: '페어링이 만료되었습니다. 다시 페어링하세요.',
+  invalidPairingCode: '코드가 틀렸거나 만료되었습니다. Mac에서 갱신하세요.',
+  rateLimited: '요청이 너무 많습니다. 잠시 후 다시 연결하세요.',
+  macLocked: 'Mac이 잠겨 있습니다. Mac에서 잠금을 해제하세요.',
+  accessibilityRequired: 'Mac 메뉴 막대에서 손쉬운 사용 권한을 허용하세요.',
+  servicePaused: '원격 조작이 일시 정지되었습니다. Mac 메뉴 막대에서 재개하세요.',
+  keychainUnavailable: 'Mac 키체인을 사용할 수 없습니다. 잠금을 해제한 후 다시 시도하세요.',
+  deviceLimit: '기기 수 한도에 도달했습니다. Mac 메뉴 막대에서 이전 페어링을 해제하세요.',
+  pointerBusy: '다른 휴대폰이 드래그 중입니다. 잠시 후 다시 시도하세요.',
+  protocolVersion: '프로토콜 버전이 다릅니다. 페이지를 새로고침하세요.',
+  inputFailed: 'Mac이 입력을 전송하지 못했습니다. 다시 시도하세요.',
+  episodeUnavailable: '이 플레이어에 해당 에피소드 조작 버튼이 없습니다.',
+  invalidPayload: '잘못된 명령입니다. 페이지를 새로고침한 후 다시 시도하세요.',
+  unsupportedMessage: 'Mac 앱이 이 조작을 지원하지 않습니다. Gimme Remote를 업데이트하세요.',
+  messageTooLarge: '텍스트가 너무 깁니다. 나누어 전송하세요.',
+  operationFailed: '조작을 완료하지 못했습니다. 다시 시도하세요.',
+  invalidMessage: '알 수 없는 메시지를 받았습니다. 페이지를 새로고침하세요.',
+  connectionClosed: '연결이 끊어졌습니다', notReady: '조작 가능한 Mac에 연결되지 않았습니다',
+  timeout: '요청 시간이 초과되었습니다. 다시 시도하세요.', pageClosed: '페이지가 닫혔습니다',
+  previewUnavailable: '현재 미리보기 상태에서는 조작할 수 없습니다.',
+};
+export const catalogs: Record<Language, Catalog> = { zh, en, ja, ko };
+
+export function resolveLanguage(preferred: readonly string[]): Language {
+  for (const tag of preferred) {
+    const base = tag.toLowerCase().split(/[-_]/)[0];
+    if (Object.hasOwn(languages, base)) return base as Language;
+  }
+  return 'en';
+}
+function validChoice(value: unknown): value is LanguageChoice {
+  return value === 'auto' || typeof value === 'string' && Object.hasOwn(languages, value);
+}
+export function readLanguageChoice(): LanguageChoice {
+  const saved = readStored<unknown>('gimme.language', 'auto');
+  return validChoice(saved) ? saved : 'auto';
+}
+let choice = readLanguageChoice();
+export function getLanguageChoice() { return choice; }
+export function getLanguage(): Language {
+  return choice === 'auto'
+    ? resolveLanguage(typeof navigator === 'undefined' ? [] : navigator.languages?.length ? navigator.languages : [navigator.language])
+    : choice;
+}
+export function setLanguage(value: LanguageChoice) {
+  choice = validChoice(value) ? value : 'auto';
+  store('gimme.language', choice);
+}
+export function t(key: TextKey, values: Record<string, string | number> = {}, language = getLanguage()): string {
+  return catalogs[language][key].replace(/\{(\w+)\}/g, (placeholder, name: string) => String(values[name] ?? placeholder));
+}
+export function errorText(code: string | undefined): string {
+  return t(code && Object.hasOwn(en, code) ? code as TextKey : 'operationFailed');
+}
+/** Keep the error code so existing notices change language without retrying the request. */
+export class LocalizedError extends Error {
+  constructor(readonly code: string) {
+    super();
+    Object.defineProperty(this, 'message', { get: () => errorText(this.code), configurable: true });
+  }
+}

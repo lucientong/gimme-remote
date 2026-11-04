@@ -1,15 +1,16 @@
 import type { Connection, ConnectionState } from './connection';
 import type { Payload, RemoteState } from './protocol';
+import { LocalizedError, t, type TextKey } from './i18n';
 
 export const previewScenes = {
-  browser: 'Chrome · 分集视频',
-  single: 'Chrome · 单视频',
-  first: 'Chrome · 第一集',
-  last: 'Chrome · 最后一集',
-  iina: 'IINA',
-  generic: '通用遥控',
-  paused: '遥控已暂停',
-  locked: 'Mac 已锁定',
+  browser: 'sceneBrowser',
+  single: 'sceneSingle',
+  first: 'sceneFirst',
+  last: 'sceneLast',
+  iina: 'sceneIina',
+  generic: 'sceneGeneric',
+  paused: 'scenePaused',
+  locked: 'sceneLocked',
 } as const;
 export type PreviewScene = keyof typeof previewScenes;
 
@@ -38,7 +39,12 @@ type FrontendConnection = Pick<Connection,
 /** Development-only fixtures: never create a socket or read/write pairing credentials. */
 export class PreviewConnection implements FrontendConnection {
   state: ConnectionState;
-  lastAction = '';
+  private action?: { key: TextKey; action?: TextKey | string };
+  get lastAction() {
+    if (!this.action) return '';
+    const label = this.action.action;
+    return t(this.action.key, { action: label && Object.hasOwn(actionLabels, label) ? t(actionLabels[label]) : label ?? '' });
+  }
   onChange: (state: ConnectionState) => void = () => {};
   onDisconnect: () => void = () => {};
   private disposed = false;
@@ -51,7 +57,7 @@ export class PreviewConnection implements FrontendConnection {
   connect() { if (!this.disposed) this.onChange(this.state); }
   setScene(scene: PreviewScene) {
     if (this.disposed || !Object.hasOwn(previewScenes, scene)) return;
-    this.scene = scene; this.lastAction = ''; this.state = previewState(scene);
+    this.scene = scene; this.action = undefined; this.state = previewState(scene);
     this.onDisconnect();
     this.onChange(this.state);
   }
@@ -61,26 +67,27 @@ export class PreviewConnection implements FrontendConnection {
         && !this.state.remote?.episodeControls?.previous) return false;
     if (type === 'media.command' && payload.action === 'nextEpisode'
         && !this.state.remote?.episodeControls?.next) return false;
-    const labels: Record<string, string> = {
-      playPause: '播放 / 暂停', previousEpisode: '上一集', nextEpisode: '下一集',
-      seekBackward: '快退', seekForward: '快进', volumeDown: '音量 −', volumeUp: '音量 +',
-      mute: '静音', fullscreen: '全屏', back: '网页后退', forward: '网页前进',
-      reload: '刷新', switchApp: '切换应用', address: '地址栏', previousTab: '上一标签',
-      nextTab: '下一标签', escape: 'Esc', enter: '回车',
-    };
-    if (type === 'input.text.insert') this.lastAction = '已预览文字输入，未发送到 Mac';
-    else if (payload.action) this.lastAction = `已预览「${labels[payload.action] ?? payload.action}」，未发送到 Mac`;
-    else if (type === 'input.pointer.click') this.lastAction = '已预览鼠标点击，未发送到 Mac';
+    if (type === 'input.text.insert') this.action = { key: 'previewText' };
+    else if (payload.action) this.action = { key: 'previewAction', action: payload.action };
+    else if (type === 'input.pointer.click') this.action = { key: 'previewClick' };
     else return true; // Motion need not trigger a render every frame.
     this.state = { ...this.state };
     this.onChange(this.state);
     return true;
   }
   request(type: string, payload: Payload): Promise<void> {
-    return this.send(type, payload) ? Promise.resolve() : Promise.reject(new Error('当前预览状态无法操作'));
+    return this.send(type, payload) ? Promise.resolve() : Promise.reject(new LocalizedError('previewUnavailable'));
   }
   resume = () => {};
   reconnectNow() { this.connect(); }
   clearError() {}
   dispose() { this.disposed = true; this.onDisconnect(); }
 }
+
+const actionLabels: Record<string, TextKey> = {
+  playPause: 'playPause', previousEpisode: 'previousEpisode', nextEpisode: 'nextEpisode',
+  seekBackward: 'seekBackward', seekForward: 'seekForward', volumeDown: 'volumeDown', volumeUp: 'volumeUp',
+  mute: 'mute', fullscreen: 'fullscreen', back: 'back', forward: 'forward', reload: 'reload',
+  switchApp: 'switchApp', address: 'address', previousTab: 'previousTab', nextTab: 'nextTab',
+  escape: 'escape', enter: 'enter',
+};

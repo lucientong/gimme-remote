@@ -1,4 +1,5 @@
-import { errors, readStored, requestId, store, type Message, type Payload, type RemoteState } from './protocol';
+import { readStored, requestId, store, type Message, type Payload, type RemoteState } from './protocol';
+import { LocalizedError } from './i18n';
 
 export interface ConnectionState {
   connected: boolean;
@@ -51,7 +52,7 @@ export class Connection {
       this.lastMessage = Date.now();
       try {
         const message = JSON.parse(event.data) as Message;
-        if (message.version !== 1) { this.update({ error: errors.protocolVersion }); return; }
+        if (message.version !== 1) { this.update({ error: 'protocolVersion' }); return; }
         if (message.type === 'session.paired' || message.type === 'session.authenticated') {
           if (message.payload.token) {
             this.token = message.payload.token;
@@ -66,17 +67,17 @@ export class Connection {
           if (message.payload.error === 'unauthorized') {
             this.token = ''; store('gimme.token', ''); this.update({ authenticated: false });
           }
-          this.update({ error: errors[message.payload.error ?? ''] ?? '操作未完成，请重试' });
+          this.update({ error: message.payload.error || 'operationFailed' });
         }
         if (message.requestId) {
           const pending = this.pending.get(message.requestId);
           if (pending) {
             clearTimeout(pending.timer); this.pending.delete(message.requestId);
-            if (message.type.startsWith('error.')) pending.reject(new Error(this.state.error));
+            if (message.type.startsWith('error.')) pending.reject(new LocalizedError(this.state.error ?? 'operationFailed'));
             else pending.resolve();
           }
         }
-      } catch { this.update({ error: '收到无法识别的消息，请刷新页面' }); }
+      } catch { this.update({ error: 'invalidMessage' }); }
     };
     ws.onclose = event => this.drop(ws, event.code === 4000);
     ws.onerror = () => this.drop(ws);
@@ -88,7 +89,7 @@ export class Connection {
     clearTimeout(this.reconnect);
     this.update({ connected: false, authenticated: false, remote: undefined, reconnectRequired });
     this.onDisconnect();
-    this.rejectPending('连接已断开');
+    this.rejectPending('connectionClosed');
     ws.close();
     if (!this.disposed && !reconnectRequired) {
       this.reconnect = setTimeout(() => this.connect(), Math.min(8_000, 600 * 2 ** this.retry++));
@@ -117,13 +118,13 @@ export class Connection {
     return this.raw(type, payload);
   }
   request(type: string, payload: Payload): Promise<void> {
-    if (type !== 'session.pair' && !this.enabled) return Promise.reject(new Error('尚未连接到可控制的 Mac'));
+    if (type !== 'session.pair' && !this.enabled) return Promise.reject(new LocalizedError('notReady'));
     const id = requestId();
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('操作超时，请重试')); }, 5_000);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new LocalizedError('timeout')); }, 5_000);
       this.pending.set(id, { resolve, reject, timer });
       if (!this.raw(type, payload, id)) {
-        clearTimeout(timer); this.pending.delete(id); reject(new Error('连接已断开'));
+        clearTimeout(timer); this.pending.delete(id); reject(new LocalizedError('connectionClosed'));
       }
     });
   }
@@ -135,12 +136,12 @@ export class Connection {
   };
   clearError() { this.update({ error: undefined }); }
   private rejectPending(reason: string) {
-    for (const value of this.pending.values()) { clearTimeout(value.timer); value.reject(new Error(reason)); }
+    for (const value of this.pending.values()) { clearTimeout(value.timer); value.reject(new LocalizedError(reason)); }
     this.pending.clear();
   }
   dispose() {
     this.disposed = true; clearTimeout(this.reconnect); clearInterval(this.heartbeat);
     if (this.ws) this.drop(this.ws);
-    this.rejectPending('页面已关闭');
+    this.rejectPending('pageClosed');
   }
 }

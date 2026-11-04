@@ -1,6 +1,8 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PreviewConnection, readPreviewScene } from './preview';
+import { setLanguage } from './i18n';
 
+beforeEach(() => setLanguage('zh'));
 afterEach(() => vi.unstubAllGlobals());
 
 it('requires an explicit supported preview scene', () => {
@@ -56,4 +58,16 @@ it('respects first/last episode boundaries and blocked states', () => {
   expect(preview.enabled).toBe(true);
   preview.dispose();
   expect(preview.send('media.command', { action: 'playPause' })).toBe(false);
+});
+
+it('translates the last preview action without changing player capabilities', () => {
+  const preview = new PreviewConnection('first');
+  preview.send('media.command', { action: 'nextEpisode' });
+  setLanguage('en');
+  expect(preview.lastAction).toContain('Next episode');
+  setLanguage('ja');
+  expect(preview.lastAction).toContain('次のエピソード');
+  setLanguage('ko');
+  expect(preview.lastAction).toContain('다음 에피소드');
+  expect(preview.state.remote?.episodeControls).toEqual({ previous: false, next: true });
 });

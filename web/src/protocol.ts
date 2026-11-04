@@ -27,24 +27,6 @@ export interface Message {
   requestId?: string;
   payload: Payload;
 }
-export const errors: Record<string, string> = {
-  unauthorized: '配对已失效，请重新配对',
-  invalidPairingCode: '配对码错误或已过期，请在 Mac 上更新',
-  rateLimited: '操作过于频繁，请稍后重新连接',
-  macLocked: 'Mac 已锁定，请在 Mac 上解锁',
-  accessibilityRequired: '请在 Mac 菜单栏授权辅助功能',
-  servicePaused: '遥控已暂停，请在 Mac 菜单栏恢复',
-  keychainUnavailable: 'Mac 钥匙串不可用，请解锁后重试',
-  deviceLimit: '配对设备已满，请在 Mac 菜单栏撤销旧配对',
-  pointerBusy: '另一台手机正在拖动，请稍后再试',
-  protocolVersion: '协议版本不匹配，请刷新页面',
-  inputFailed: 'Mac 未能发送输入，请重试',
-  episodeUnavailable: '当前播放器没有可用的对应上下集控件',
-  invalidPayload: '指令无效，请刷新页面后重试',
-  unsupportedMessage: 'Mac 端版本不支持该操作，请更新 Gimme Remote',
-  messageTooLarge: '内容过长，请分段发送',
-};
-
 /** Home Screen web apps have storage separate from the browser, so they pair on their own. */
 export function isStandalone(): boolean {
   return (navigator as Navigator & { standalone?: boolean }).standalone === true

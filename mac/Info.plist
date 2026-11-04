@@ -5,6 +5,9 @@
   <key>CFBundleIdentifier</key><string>com.lucientong.GimmeRemote</string>
   <key>CFBundleName</key><string>Gimme Remote</string>
   <key>CFBundleDisplayName</key><string>Gimme Remote</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array><string>zh-Hans</string><string>en</string><string>ja</string><string>ko</string></array>
   <key>CFBundleExecutable</key><string>GimmeRemote</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -13,6 +16,6 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>让同一 Wi-Fi 中的手机连接并遥控你的 Mac。</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Allow phones on the same Wi-Fi network to connect and control your Mac.</string>
 </dict>
 </plist>

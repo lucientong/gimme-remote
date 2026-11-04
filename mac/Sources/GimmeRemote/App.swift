@@ -10,8 +10,13 @@ import RemoteTransport
 struct GimmeRemoteApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     var body: some Scene {
-        Settings { Text("请从菜单栏打开 Gimme Remote").padding() }
+        Settings { SettingsHint() }
     }
+}
+
+private struct SettingsHint: View {
+    @AppStorage(NativeLocalization.preferenceKey) private var choice = "auto"
+    var body: some View { Text(NativeLocalization(choice: choice).text(.openMenu)).padding() }
 }
 
 @MainActor
@@ -49,11 +54,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model, let button = statusItem.button else { return }
         let state = !model.trusted || model.vaultUnreadable ? "attention"
             : model.paused || model.locked ? "paused" : model.connected > 0 ? "connected" : "idle"
-        button.toolTip = ["attention": "Gimme Remote：需要处理", "paused": model.paused ? "Gimme Remote：已暂停" : "Gimme Remote：Mac 已锁定",
-                          "connected": "Gimme Remote：\(model.connected) 台已连接"][state] ?? "Gimme Remote"
+        let strings = model.strings
+        let detail = state == "attention" ? strings.text(.attention)
+            : state == "paused" ? strings.text(model.paused ? .paused : .locked)
+            : state == "connected" ? strings.connected(model.connected) : ""
+        button.toolTip = detail.isEmpty ? "Gimme Remote" : "Gimme Remote · \(detail)"
+        button.setAccessibilityLabel(button.toolTip)
+        button.image?.accessibilityDescription = button.toolTip
         guard state != iconState else { return }
         iconState = state
         button.image = Self.statusImage(state)
+        button.image?.accessibilityDescription = button.toolTip
         button.appearsDisabled = state == "paused"
     }
     private static func statusImage(_ state: String) -> NSImage? {
@@ -72,7 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Gimme Remote：需要处理"
         return image
     }
     @objc private func toggle() {
@@ -121,7 +131,11 @@ final class AppModel: ObservableObject {
     @Published var trusted = AXIsProcessTrusted()
     @Published var locked = false
     @Published var running = false
-    @Published var failure: String?
+    @Published var failure: NativeNotice?
+    @Published var languageChoice = NativeLocalization.savedChoice() {
+        didSet { UserDefaults.standard.set(languageChoice, forKey: NativeLocalization.preferenceKey) }
+    }
+    var strings: NativeLocalization { NativeLocalization(choice: languageChoice) }
     @Published var vaultUnreadable = false
     @Published var paused = false
     @Published var preventSleep = UserDefaults.standard.bool(forKey: "preventSleep")
@@ -159,7 +173,7 @@ final class AppModel: ObservableObject {
                                   ready: { [weak self] in self?.running = true })
         task = Task {
             do { try await server.run() }
-            catch { if !Task.isCancelled { failure = "服务启动失败：\(error)"; running = false } }
+            catch { if !Task.isCancelled { failure = NativeNotice(key: .serverFailure, detail: String(describing: error)); running = false } }
         }
         do {
             ipc = try IPCServer { [weak self] command in
@@ -178,7 +192,7 @@ final class AppModel: ObservableObject {
                     return "Gimme Remote: \(self.running ? "running" : "starting"), \(self.paused ? "paused" : "active"), devices: \(self.connected), accessibility: \(self.trusted) · \(self.url)"
                 }
             }
-        } catch { failure = "CLI 服务不可用：\(error)" }
+        } catch { failure = NativeNotice(key: .cliFailure, detail: String(describing: error)) }
         ticker = Task {
             await refreshCode()
             while !Task.isCancelled {
@@ -205,7 +219,7 @@ final class AppModel: ObservableObject {
         do {
             let value = try await sessions.newCode()
             code = value.code; expires = value.expires
-        } catch { failure = "配对码生成失败" }
+        } catch { failure = NativeNotice(key: .codeFailure) }
     }
     func retryVault() async {
         await sessions.retryVault()
@@ -222,7 +236,7 @@ final class AppModel: ObservableObject {
     func revoke() async {
         BrowserPlayer.shared.clear()
         do { try await sessions.revokeAll(); controller.release(); await refreshCode() }
-        catch { failure = "无法撤销设备：Keychain 写入失败" }
+        catch { failure = NativeNotice(key: .revokeFailure) }
     }
     func disconnect() async {
         BrowserPlayer.shared.clear()
@@ -238,7 +252,7 @@ final class AppModel: ObservableObject {
             if SMAppService.mainApp.status == .requiresApproval {
                 SMAppService.openSystemSettingsLoginItems()
             }
-        } catch { failure = "登录启动设置失败：\(error)"; loginEnabled = SMAppService.mainApp.status == .enabled }
+        } catch { failure = NativeNotice(key: .loginFailure, detail: String(describing: error)); loginEnabled = SMAppService.mainApp.status == .enabled }
     }
     func updatePower() {
         UserDefaults.standard.set(preventSleep, forKey: "preventSleep")

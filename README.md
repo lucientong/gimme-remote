@@ -1,12 +1,12 @@
 # gimme-remote
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 **Gimme the remote.** Connect your Mac to a TV and use your phone as the remote. A native Swift menu bar app serves a mobile web interface on your local network. No iOS app required.
 
-Features: media controls for IINA and browsers, a touchpad (with double-click, scrolling, and dragging), Chinese text input, browser shortcuts, QR code pairing, per-device tokens in the Keychain, permission and lock screen guidance, reconnection, launch at login, sleep prevention while connected, and the local `gimme` CLI.
+Features: media controls for IINA and browsers, a touchpad (with double-click, scrolling, and dragging), Unicode text input, browser shortcuts, QR code pairing, per-device tokens in the Keychain, permission and lock screen guidance, reconnection, launch at login, sleep prevention while connected, Chinese / English / Japanese / Korean interfaces, and the local `gimme` CLI.
 
-Planned: screenshot-based clicking, per-device management, and an English interface.
+Planned: screenshot-based clicking and per-device management.
 
 ## Installation
 
@@ -22,6 +22,8 @@ Or download directly from [GitHub Releases](https://github.com/lucientong/gimme-
 For the latest test build, use the [testing release](https://github.com/lucientong/gimme-remote/releases/tag/testing). It is updated after checks pass on `master` and may include changes not yet in the stable release.
 
 Open the menu bar app and grant Accessibility permission. Connect your phone and Mac to the same Wi-Fi network and scan the QR code. To keep the remote on your Home Screen, use mobile Chrome's **Share → Add to Home Screen** first, then open it from the Home Screen icon and enter the pairing code there: iOS stores Home Screen web apps separately from the browser, so a pairing made in Chrome does not carry over.
+
+The Mac app and phone interface each follow their own system language, supporting Chinese, English, Japanese, and Korean; other languages fall back to English. To choose manually, use **General → Language** in the Mac panel, or tap the connection status at the top of the phone page and use **Settings → Language**. Selection is saved and takes effect immediately, including existing error notices. The phone selector is available before pairing, and changing language keeps the connection and any text being composed. Choose **System default** to follow the system again. Chinese language variants currently use Simplified Chinese.
 
 Volume buttons adjust **player volume**; use your TV remote to adjust the TV's overall volume. Web player shortcuts depend on page focus and website support. You can always use the touchpad to click controls on the TV display. The app does not use a Service Worker, cloud relay, or arbitrary script execution.
 
@@ -43,6 +45,7 @@ npm --prefix web test
 npm --prefix web run build
 swift build --package-path mac --jobs 4 --disable-index-store
 bash scripts/test-core.sh
+bash scripts/test-menu-panel.sh
 swift run --package-path mac --jobs 4 --disable-index-store TransportChecks
 
 # With a full Xcode installation
@@ -59,7 +62,9 @@ Run the frontend independently with hot reload:
 npm --prefix web run dev
 ```
 
-To inspect the UI without a Mac connection, open `/?preview=browser` on the Vite URL (normally `http://localhost:5173/?preview=browser`) or click **预览遥控界面** at the top of the page. Alternatively, run `npm --prefix web run dev:preview` to start Vite and open the preview. It needs no backend or pairing and offers series, standalone video, first/last episode, IINA, generic, paused, and locked states. Buttons do not send inputs to the Mac. This preview is enabled only in Vite development mode.
+To inspect the UI without a Mac connection, open `/?preview=browser` on the Vite URL (normally `http://localhost:5173/?preview=browser`) or click **Preview the remote** at the top of the page. Alternatively, run `npm --prefix web run dev:preview` to start Vite and open the preview. It needs no backend or pairing and offers series, standalone video, first/last episode, IINA, generic, paused, and locked states. Buttons do not send inputs to the Mac. Use the connection status menu to preview all four languages. This preview is enabled only in Vite development mode.
+
+Phone translations live in `web/src/i18n.ts`; Mac translations live in `mac/Sources/GimmeRemote/Localization.swift`. Both catalogs check translation completeness and placeholder consistency. Native panel checks render all four languages, with expanded / collapsed pairing, permission guidance, and height-limited scrolling. System permission descriptions in `mac/Resources/*.lproj/InfoPlist.strings` follow the system's app language and are copied by the release script. Translations are packaged with the app and web bundle, without additional resource downloads.
 
 `TransportChecks` runs HTTP/WebSocket regression tests and exits. Its port `19371` is used only during tests; it is not the persistent native backend for the frontend.
 

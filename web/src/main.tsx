@@ -5,6 +5,7 @@ import { RepeatButton, TouchpadGesture } from './gestures';
 import { isStandalone, readStored, store } from './protocol';
 import { episodeControls } from './player';
 import { PreviewConnection, previewScenes, readPreviewScene, type PreviewScene } from './preview';
+import { errorText, getLanguage, getLanguageChoice, languages, setLanguage, t, type LanguageChoice, type TextKey } from './i18n';
 import './style.css';
 
 const previewScene = import.meta.env.DEV ? readPreviewScene(location.search) : undefined;
@@ -78,7 +79,7 @@ function Touchpad({ speed, acceleration }: { speed: number; acceleration: boolea
     return () => { cancelAnimationFrame(frame); cancel(); window.removeEventListener('gimme.cancel', cancel); window.removeEventListener('blur', cancel); };
   }, [gesture]);
   return <div class={`touchpad ${touching ? 'touching' : ''} ${!connection.enabled ? 'disabled' : ''}`}
-    aria-label="触控板：单指移动，轻点单击，双指滚动或轻点右键，按住后拖动"
+    aria-label={t('touchpad')}
     onContextMenu={e => e.preventDefault()}
     onPointerDown={e => {
       if (!connection.enabled) return;
@@ -94,7 +95,7 @@ function Touchpad({ speed, acceleration }: { speed: number; acceleration: boolea
     <span class="pad-cross"><Icon name="crosshair" /></span>
     {ripples.map(r => <i key={r.id} class="ripple" style={{ left: `${r.x}px`, top: `${r.y}px` }}
       onAnimationEnd={() => setRipples(list => list.filter(item => item.id !== r.id))} />)}
-    <div class="pad-hint">轻点点击 · 双指滚动 · 按住拖动</div>
+    <div class="pad-hint">{t('padHint')}</div>
   </div>;
 }
 
@@ -110,18 +111,30 @@ function CodeInput({ value, onChange }: { value: string; onChange: (value: strin
 }
 
 function App() {
+  const [languageChoice, setLanguageChoice] = useState(getLanguageChoice());
+  const [systemLanguage, setSystemLanguage] = useState(getLanguage());
+  const language = getLanguage();
+  useEffect(() => {
+    document.documentElement.lang = language === 'zh' ? 'zh-CN' : language;
+    document.title = 'Gimme Remote';
+  }, [language, systemLanguage]);
+  useEffect(() => {
+    const changed = () => setSystemLanguage(getLanguage());
+    window.addEventListener('languagechange', changed);
+    return () => window.removeEventListener('languagechange', changed);
+  }, []);
   const [status, setStatus] = useState(connection.state);
   const [code, setCode] = useState(new URLSearchParams(location.hash.slice(1)).get('code') ?? '');
   // A code from the QR link waits for a tap, so the user can still add the page to the Home Screen first.
   const [scanned] = useState(code.length === 6);
   const [pairing, setPairing] = useState(false);
-  const [pairError, setPairError] = useState('');
+  const [pairError, setPairError] = useState<Error>();
   const [slow, setSlow] = useState(false);
   const [settings, setSettings] = useState(false);
   const [textOpen, setTextOpen] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [feedback, setFeedback] = useState('');
+  const [feedback, setFeedback] = useState<TextKey | Error>();
   const savedSpeed = Number(readStored('gimme.speed', 1.3));
   const [speed, setSpeed] = useState(Number.isFinite(savedSpeed) ? Math.max(0.5, Math.min(3, savedSpeed)) : 1.3);
   const [acceleration, setAcceleration] = useState(readStored('gimme.acceleration', true));
@@ -150,19 +163,19 @@ function App() {
   const episodes = episodeControls(remote);
   const layout = remote?.layout ?? 'generic';
   const blocked = !remote ? ''
-    : remote.locked ? 'Mac 已锁定，请在 Mac 上解锁'
-    : remote.paused ? '遥控已暂停，请在 Mac 菜单栏恢复'
-    : !remote.accessibility ? '请先在 Mac 菜单栏授权辅助功能' : '';
-  const stateText = status.reconnectRequired ? '已断开'
-    : !status.authenticated ? (connection.paired ? '连接中' : status.connected ? '未配对' : '未连接')
-    : remote?.locked ? '已锁定' : remote?.paused ? '已暂停' : remote && !remote.accessibility ? '未授权' : '已连接';
+    : remote.locked ? t('lockedHint')
+    : remote.paused ? t('pausedHint')
+    : !remote.accessibility ? t('accessibilityHint') : '';
+  const stateText = status.reconnectRequired ? t('disconnected')
+    : !status.authenticated ? (connection.paired ? t('connecting') : status.connected ? t('unpaired') : t('offline'))
+    : remote?.locked ? t('locked') : remote?.paused ? t('paused') : remote && !remote.accessibility ? t('untrusted') : t('connected');
   async function pair(value = code) {
     if (pairing) return;
-    setPairing(true); setPairError('');
+    setPairing(true); setPairError(undefined);
     try {
       await connection.request('session.pair', { code: value, deviceName: /iPhone/.test(navigator.userAgent) ? 'iPhone' : 'Phone' });
       setCode('');
-    } catch (error) { setPairError((error as Error).message); }
+    } catch (error) { setPairError(error as Error); }
     finally { setPairing(false); }
   }
   function typeCode(value: string) {
@@ -170,141 +183,148 @@ function App() {
     if (value.length === 6 && value !== code && status.connected) void pair(value);
   }
   async function sendText(e: Event) {
-    e.preventDefault(); setSending(true); setFeedback('');
-    try { await connection.request('input.text.insert', { text }); setText(''); setFeedback(preview ? '已预览文字输入，未发送到 Mac' : '已发送输入'); }
-    catch (error) { setFeedback((error as Error).message); }
+    e.preventDefault(); setSending(true); setFeedback(undefined);
+    try { await connection.request('input.text.insert', { text }); setText(''); setFeedback(preview ? 'previewText' : 'sent'); }
+    catch (error) { setFeedback(error as Error); }
     finally { setSending(false); }
   }
-  const waiting = <p class="waiting" role="status"><span class="dots"><i /><i /><i /></span>正在连接 Mac…
-    {slow && <small>请确认 Mac 上的 Gimme Remote 已打开，且手机和 Mac 在同一个 Wi-Fi 下。</small>}</p>;
+  const waiting = <p class="waiting" role="status"><span class="dots"><i /><i /><i /></span>{t('waiting')}
+    {slow && <small>{t('waitingHint')}</small>}</p>;
 
-  const inputButton = <button class={`control ${textOpen ? 'selected' : ''}`} onClick={() => setTextOpen(!textOpen)} disabled={!connection.enabled} aria-label="输入文本"><Icon name="keyboard" /><small>输入</small></button>;
-  const switchButton = <ControlButton action="switchApp" label="切换应用" short="切换" icon="switchApp" shortcut />;
+  const inputButton = <button class={`control ${textOpen ? 'selected' : ''}`} onClick={() => setTextOpen(!textOpen)} disabled={!connection.enabled} aria-label={t('input')}><Icon name="keyboard" /><small>{t('inputShort')}</small></button>;
+  const switchButton = <ControlButton action="switchApp" label={t('switchApp')} short={t('switchShort')} icon="switchApp" shortcut />;
   // A player needs no browser navigation; it only keeps text input and app switching.
   const tools = layout === 'iina'
-    ? <section class="toolbar two" aria-label="文本与切换工具">
+    ? <section class="toolbar two" aria-label={t('textTools')}>
       {inputButton}
       {switchButton}
     </section>
     : <>
-      <section class="toolbar five" aria-label="浏览器与文本工具">
-        <ControlButton action="back" label="网页后退" short="后退" icon="left" shortcut />
-        <ControlButton action="forward" label="网页前进" short="前进" icon="right" shortcut />
-        <ControlButton action="reload" label="刷新" icon="reload" shortcut />
+      <section class="toolbar five" aria-label={t('browserTools')}>
+        <ControlButton action="back" label={t('back')} short={t('backShort')} icon="left" shortcut />
+        <ControlButton action="forward" label={t('forward')} short={t('forwardShort')} icon="right" shortcut />
+        <ControlButton action="reload" label={t('reload')} icon="reload" shortcut />
         {inputButton}
         {switchButton}
       </section>
       <div class="chips">
-        <ControlButton action="address" label="地址栏" shortcut />
-        <ControlButton action="previousTab" label="上一标签" shortcut />
-        <ControlButton action="nextTab" label="下一标签" shortcut />
-        {layout === 'browser' && <ControlButton action="escape" label="Esc" shortcut />}
+        <ControlButton action="address" label={t('address')} shortcut />
+        <ControlButton action="previousTab" label={t('previousTab')} shortcut />
+        <ControlButton action="nextTab" label={t('nextTab')} shortcut />
+        {layout === 'browser' && <ControlButton action="escape" label={t('escape')} shortcut />}
       </div>
-      {layout === 'browser' && <p class="volume-note">网页前进 / 后退切换浏览历史</p>}
+      {layout === 'browser' && <p class="volume-note">{t('historyHint')}</p>}
     </>;
   // The browser layout leads with the touchpad, so playback shrinks to one row.
-  const player = <section class={`remote-panel ${layout === 'browser' ? 'compact' : ''}`} aria-label="播放器遥控">
-    {layout === 'browser' && <div class="panel-title">网页播放器</div>}
-    {episodes && <div class="episode-row" role="group" aria-label="上下集与播放">
+  const player = <section class={`remote-panel ${layout === 'browser' ? 'compact' : ''}`} aria-label={t('player')}>
+    {layout === 'browser' && <div class="panel-title">{t('webPlayer')}</div>}
+    {episodes && <div class="episode-row" role="group" aria-label={t('episodes')}>
       {typeof episodes.previous === 'boolean'
-        ? <ControlButton action="previousEpisode" label="上一集" icon="previousEpisode" disabled={!episodes.previous} /> : <span />}
-      <ControlButton action="playPause" label="播放 / 暂停" icon="playPause" className="play" />
+        ? <ControlButton action="previousEpisode" label={t('previousEpisode')} icon="previousEpisode" disabled={!episodes.previous} /> : <span />}
+      <ControlButton action="playPause" label={t('playPause')} icon="playPause" className="play" />
       {typeof episodes.next === 'boolean'
-        ? <ControlButton action="nextEpisode" label="下一集" icon="nextEpisode" disabled={!episodes.next} /> : <span />}
+        ? <ControlButton action="nextEpisode" label={t('nextEpisode')} icon="nextEpisode" disabled={!episodes.next} /> : <span />}
     </div>}
     {layout === 'browser'
       ? <div class={`compact-row ${episodes ? 'six' : ''}`}>
-        <ControlButton action="seekBackward" label="快退" icon="back" repeat />
-        {!episodes && <ControlButton action="playPause" label="播放 / 暂停" icon="playPause" className="play" />}
-        <ControlButton action="seekForward" label="快进" icon="next" repeat />
-        <ControlButton action="volumeDown" label="音量 −" icon="minus" repeat />
-        <ControlButton action="volumeUp" label="音量 +" icon="plus" repeat />
-        <ControlButton action="mute" label="静音" icon="mute" />
-        <ControlButton action="fullscreen" label="全屏" icon="fullscreen" />
+        <ControlButton action="seekBackward" label={t('seekBackward')} icon="back" repeat />
+        {!episodes && <ControlButton action="playPause" label={t('playPause')} icon="playPause" className="play" />}
+        <ControlButton action="seekForward" label={t('seekForward')} icon="next" repeat />
+        <ControlButton action="volumeDown" label={t('volumeDown')} icon="minus" repeat />
+        <ControlButton action="volumeUp" label={t('volumeUp')} icon="plus" repeat />
+        <ControlButton action="mute" label={t('mute')} icon="mute" />
+        <ControlButton action="fullscreen" label={t('fullscreen')} icon="fullscreen" />
       </div>
       : <div class="deck">
         <div class="side">
-          <ControlButton action="mute" label="静音" icon="mute" />
-          <ControlButton action="fullscreen" label="全屏" icon="fullscreen" />
-          <ControlButton action="escape" label="Esc" shortcut />
+          <ControlButton action="mute" label={t('mute')} icon="mute" />
+          <ControlButton action="fullscreen" label={t('fullscreen')} icon="fullscreen" />
+          <ControlButton action="escape" label={t('escape')} shortcut />
         </div>
         <div class="transport">
-          <ControlButton action="playPause" label="播放 / 暂停" icon="playPause" className="play" />
+          <ControlButton action="playPause" label={t('playPause')} icon="playPause" className="play" />
           <div class="seek">
-            <ControlButton action="seekBackward" label="快退" icon="back" repeat />
-            <ControlButton action="seekForward" label="快进" icon="next" repeat />
+            <ControlButton action="seekBackward" label={t('seekBackward')} icon="back" repeat />
+            <ControlButton action="seekForward" label={t('seekForward')} icon="next" repeat />
           </div>
         </div>
-        <div class="rocker" role="group" aria-label="播放器音量">
-          <ControlButton action="volumeUp" label="音量 +" icon="plus" repeat />
-          <span>音量</span>
-          <ControlButton action="volumeDown" label="音量 −" icon="minus" repeat />
+        <div class="rocker" role="group" aria-label={t('playerVolume')}>
+          <ControlButton action="volumeUp" label={t('volumeUp')} icon="plus" repeat />
+          <span>{t('volume')}</span>
+          <ControlButton action="volumeDown" label={t('volumeDown')} icon="minus" repeat />
         </div>
       </div>}
-    <p class="volume-note">调节播放器音量 · 电视总音量用电视遥控器</p>
+    <p class="volume-note">{t('volumeHint')}</p>
   </section>;
   const touchpad = <Touchpad speed={speed} acceleration={acceleration} />;
 
   return <main class={`shell ${layout}`}>
     <header class="header">
       <div class="brand"><Icon name="remote" /><span>gimme<span class="brand-dot">.</span></span></div>
-      <button class={`target ${connection.enabled ? 'online' : ''}`} onClick={() => setSettings(!settings)} aria-label="连接状态和触控板设置">
-        <i /><span>{status.authenticated ? remote?.appName ?? 'Mac' : 'Mac'} · {preview ? '预览' : stateText}</span><span class="chevron">⌄</span>
+      <button class={`target ${connection.enabled ? 'online' : ''}`} onClick={() => setSettings(!settings)} aria-label={t('target')}>
+        <i /><span>{status.authenticated ? remote?.appName ?? 'Mac' : 'Mac'} · {preview ? t('preview') : stateText}</span><span class="chevron">⌄</span>
       </button>
     </header>
-    {import.meta.env.DEV && (preview ? <section class="preview-panel" aria-label="界面预览">
-      <div class="section-top"><strong>界面预览</strong><a href={location.pathname}>返回连接页</a></div>
-      <label for="preview-scene">预览状态</label>
+    {import.meta.env.DEV && (preview ? <section class="preview-panel" aria-label={t('previewTitle')}>
+      <div class="section-top"><strong>{t('previewTitle')}</strong><a href={location.pathname}>{t('previewBack')}</a></div>
+      <label for="preview-scene">{t('previewScene')}</label>
       <select id="preview-scene" value={preview.scene} onChange={e => {
         const scene = e.currentTarget.value as PreviewScene;
-        preview.setScene(scene); setFeedback('');
+        preview.setScene(scene); setFeedback(undefined);
         const url = new URL(location.href);
         url.searchParams.set('preview', preview.scene);
         history.replaceState(null, '', url.pathname + url.search + url.hash);
       }}>
-        {Object.entries(previewScenes).map(([value, label]) => <option value={value}>{label}</option>)}
+        {Object.entries(previewScenes).map(([value, label]) => <option value={value}>{t(label)}</option>)}
       </select>
-      <p role="status">{preview.lastAction || '无需连接 Mac，按钮操作仅在本页演示。'}</p>
-    </section> : <a class="preview-entry" href={`${location.pathname}?preview=browser`}>预览遥控界面 · 无需连接 Mac</a>)}
-    {status.error && status.error !== pairError && !blocked && <div class="notice" role="status">{status.error}</div>}
+      <p role="status">{preview.lastAction || t('previewHint')}</p>
+    </section> : <a class="preview-entry" href={`${location.pathname}?preview=browser`}>{t('previewEntry')}</a>)}
+    {status.error && errorText(status.error) !== pairError?.message && !blocked && <div class="notice" role="status">{errorText(status.error)}</div>}
     {settings && <section class="settings">
-      <div class="section-top"><span class="section-label">手感设置</span><button class="text-button" onClick={() => setSettings(false)}>完成</button></div>
-      <label for="speed">指针速度 <strong>{speed.toFixed(1)}×</strong></label>
+      <div class="section-top"><span class="section-label">{t('settings')}</span><button class="text-button" onClick={() => setSettings(false)}>{t('done')}</button></div>
+      <label for="language">{t('language')}</label>
+      <select id="language" value={languageChoice} onChange={e => {
+        const value = e.currentTarget.value as LanguageChoice;
+        setLanguage(value); setLanguageChoice(value);
+      }}>
+        <option value="auto">{t('auto')}</option>
+        {Object.entries(languages).map(([value, label]) => <option value={value}>{label}</option>)}
+      </select>
+      <label for="speed">{t('speed')} <strong>{speed.toFixed(1)}×</strong></label>
       <input id="speed" type="range" min="0.5" max="3" step="0.1" value={speed} onInput={e => setSpeed(Number(e.currentTarget.value))} />
-      <label class="checkbox"><input type="checkbox" checked={acceleration} onChange={e => setAcceleration(e.currentTarget.checked)} />指针加速</label>
-      <p>手机 Chrome → 分享 → 添加到主屏幕，下次一键打开。主屏幕入口与浏览器分开保存配对，首次打开需在 Mac 上更新配对码后再输入一次。</p>
+      <label class="checkbox"><input type="checkbox" checked={acceleration} onChange={e => setAcceleration(e.currentTarget.checked)} />{t('acceleration')}</label>
+      <p>{t('homeScreen')}</p>
     </section>}
     {status.authenticated ? <div class="deck-area">
       {layout === 'browser' ? <>{touchpad}{tools}{player}</> : <>{player}{touchpad}{tools}</>}
       {textOpen && <form class="text-panel" onSubmit={sendText}>
-        <label for="remote-text">输入到 Mac 当前焦点</label>
-        <textarea id="remote-text" rows={3} value={text} onInput={e => setText(e.currentTarget.value)} placeholder="中文搜索词、网址或任何文字…" />
-        <div class="text-actions"><ControlButton action="enter" label="回车" shortcut />
-          <button class="primary" disabled={!connection.enabled || !text || sending || new TextEncoder().encode(text).length > 8192}>{sending ? '发送中…' : '发送整段文字'}</button></div>
-        <span role="status" class="feedback">{feedback}</span>
+        <label for="remote-text">{t('textLabel')}</label>
+        <textarea id="remote-text" rows={3} value={text} onInput={e => setText(e.currentTarget.value)} placeholder={t('textPlaceholder')} />
+        <div class="text-actions"><ControlButton action="enter" label={t('enter')} shortcut />
+          <button class="primary" disabled={!connection.enabled || !text || sending || new TextEncoder().encode(text).length > 8192}>{sending ? t('sending') : t('sendText')}</button></div>
+        <span role="status" class="feedback">{feedback instanceof Error ? feedback.message : feedback ? t(feedback) : ''}</span>
       </form>}
       {blocked && <div class="blocked" role="status"><div><Icon name="lock" /><span>{blocked}</span></div></div>}
     </div>
     : status.reconnectRequired ? <section class="pair-panel connecting">
-      <p role="status">Mac 已断开这台手机，配对仍然保留。</p>
-      <button class="primary" onClick={() => connection.reconnectNow()}>重新连接</button>
+      <p role="status">{t('disconnectedHint')}</p>
+      <button class="primary" onClick={() => connection.reconnectNow()}>{t('reconnect')}</button>
     </section>
     : connection.paired ? <section class="pair-panel connecting">{waiting}</section>
     : <section class="pair-panel">
-      <h1>连接你的 Mac</h1>
-      <p>确认手机和 Mac 在同一个 Wi-Fi 下。</p>
-      <p>{isStandalone() && !code ? '主屏幕入口需要单独配对一次：在 Mac 菜单栏的 Gimme Remote 点“更新配对码”，再输入新的 6 位码。'
-        : scanned && code.length === 6 ? '配对码已从二维码填好，点“连接 Mac”即可。'
-        : '在 Mac 菜单栏打开 Gimme Remote，输入面板上的 6 位配对码。'}</p>
+      <h1>{t('pairTitle')}</h1>
+      <p>{t('wifiHint')}</p>
+      <p>{isStandalone() && !code ? t('standalonePair')
+        : scanned && code.length === 6 ? t('scannedPair') : t('manualPair')}</p>
       <form onSubmit={e => { e.preventDefault(); void pair(); }}>
-        <label for="pair-code">配对码</label>
+        <label for="pair-code">{t('pairCode')}</label>
         <CodeInput value={code} onChange={typeCode} />
-        <button class="primary wide" disabled={!status.connected || code.length !== 6 || pairing}>{pairing ? '配对中…' : '连接 Mac'}</button>
-        {pairError && <p role="alert" class="error">{pairError}</p>}
+        <button class="primary wide" disabled={!status.connected || code.length !== 6 || pairing}>{pairing ? t('pairing') : t('pair')}</button>
+        {pairError && <p role="alert" class="error">{pairError.message}</p>}
       </form>
       {!status.connected && waiting}
-      {!isStandalone() && <small>想放到主屏幕：先在手机 Chrome 中“分享 → 添加到主屏幕”，再从主屏幕图标打开并配对。</small>}
-      <small>只传输按键操作，不会传输屏幕画面。</small>
+      {!isStandalone() && <small>{t('addHome')}</small>}
+      <small>{t('inputOnly')}</small>
     </section>}
     <footer>Gimme Remote {version === 'dev' ? version : `v${version}`}</footer>
   </main>;

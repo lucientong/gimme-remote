@@ -1,5 +1,5 @@
 :root {
-  font-family: "Avenir Next", "PingFang SC", sans-serif;
+  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
   color: #f2f2e9;
   background: #171a18;
   font-synthesis: none;
@@ -73,7 +73,7 @@ h1 { font-size: 28px; letter-spacing: -.5px; margin: 2px 0 12px; }
 .control { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; user-select: none; touch-action: none; box-shadow: var(--depth); transition: background .15s, transform .1s, box-shadow .1s; }
 .control:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 1px 0 #ffffff0d; background: #37412b; }
 .control svg { width: 23px; height: 23px; }
-.control small { font-size: 10px; color: #b0b5a9; }
+.control small { font-size: 10px; color: #b0b5a9; overflow-wrap: anywhere; text-align: center; }
 .control .solid { fill: currentColor; }
 .deck { display: grid; grid-template-columns: 58px 1fr 58px; gap: 12px; align-items: stretch; }
 .side { display: grid; gap: 8px; }
@@ -105,17 +105,17 @@ h1 { font-size: 28px; letter-spacing: -.5px; margin: 2px 0 12px; }
 .pad-cross svg { width: 100%; height: 100%; }
 .ripple { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; border: 2px solid var(--accent); pointer-events: none; animation: ripple .5s ease-out forwards; }
 @keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2); opacity: 0; } }
-.pad-hint { position: absolute; bottom: 16px; left: 0; width: 100%; text-align: center; color: #a2ac93; font-size: 11px; }
+.pad-hint { position: absolute; bottom: 16px; left: 0; width: 100%; padding: 0 12px; text-align: center; color: #a2ac93; font-size: 11px; }
 .toolbar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
 .toolbar.two { grid-template-columns: repeat(2, 1fr); }
 .toolbar.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .toolbar .control { min-height: 58px; min-width: 0; padding: 6px 2px; }
-.toolbar .control small { white-space: nowrap; }
+.toolbar .control small { line-height: 1.4; }
 .short-label { display: none; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .chips .control { flex: 0 0 auto; flex-direction: row; min-height: 36px; padding: 0 10px; border-radius: 18px; font-size: 12px; color: #d6dacd; }
 .browser .chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.browser .chips .control { min-width: 0; padding: 0 4px; white-space: nowrap; }
+.browser .chips .control { min-width: 0; padding: 5px 4px; text-align: center; overflow-wrap: anywhere; }
 .episode-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 .episode-row .control { min-height: 62px; }
 .compact .compact-row.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -127,6 +127,8 @@ h1 { font-size: 28px; letter-spacing: -.5px; margin: 2px 0 12px; }
 .settings, .text-panel { background: var(--panel); border: 1px solid var(--line); padding: 18px; border-radius: 16px; margin-bottom: 14px; font-size: 13px; }
 .text-panel { margin: 14px 0 0; }
 .settings label { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.settings select { width: 100%; min-height: 44px; margin-bottom: 20px; padding: 9px 12px; color: inherit; background: #171c15; border: 1px solid var(--line); border-radius: 9px; }
+.text-actions .control { flex-shrink: 0; }
 .settings input[type=range] { width: 100%; accent-color: var(--accent); margin: 8px 0 20px; min-height: 30px; }
 .settings .checkbox { justify-content: flex-start; gap: 10px; align-items: center; min-height: 30px; }
 .checkbox input { accent-color: var(--accent); width: 18px; height: 18px; }
