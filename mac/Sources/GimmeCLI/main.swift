@@ -11,13 +11,13 @@ func appVersion() -> String {
 let args = Array(CommandLine.arguments.dropFirst())
 if args == ["--version"] {
     print("gimme \(appVersion())")
-} else if args.count == 1, ["status", "pair", "stop", "resume"].contains(args[0]) {
+} else if args.count == 1, ["status", "pair", "stop", "resume", "player"].contains(args[0]) {
     do { print(try LocalIPC.request(args[0])) }
     catch {
         fputs("gimme: \((error as? ControlError)?.code ?? "requestFailed"). Open GimmeRemote.app first.\n", stderr)
         exit(1)
     }
 } else {
-    print("Usage: gimme status | pair | stop | resume | --version\nControls the local Gimme Remote menu bar app.")
+    print("Usage: gimme status | pair | stop | resume | player | --version\nControls the local Gimme Remote menu bar app.\n`player` diagnoses episode control detection in the frontmost browser.")
     if !args.isEmpty && args != ["--help"] { exit(2) }
 }

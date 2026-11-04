@@ -4,6 +4,9 @@ import RemoteCore
 
 /// AX calls can block on another process; keep them off the input/UI actor.
 private actor BrowserAccessibility {
+    private var preparedApplication: AXUIElement?
+    private var lastScan = "not sampled"
+
     private struct Snapshot {
         var nodes: [PlayerNode] = []
         var elements: [AXUIElement] = []
@@ -17,25 +20,49 @@ private actor BrowserAccessibility {
     }
 
     private func snapshot(pid: pid_t) -> Snapshot? {
-        guard AXIsProcessTrusted() else { return nil }
+        guard AXIsProcessTrusted() else {
+            lastScan = "accessibility permission unavailable"
+            return nil
+        }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.05)
+        // Chromium activates native accessibility on AXRole access and accepts
+        // AXEnhancedUserInterface from assistive clients for complete web content.
+        // Its activation is debounced for two seconds: do not restart it each tick.
+        if preparedApplication.map({ !CFEqual($0, app) }) ?? true {
+            _ = attribute(app, kAXRoleAttribute)
+            if attribute(app, "AXEnhancedUserInterface") as? Bool != true {
+                _ = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+            }
+            preparedApplication = app
+        }
         guard let rawWindow = attribute(app, kAXFocusedWindowAttribute),
-              CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { return nil }
+              CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else {
+            lastScan = "focused window unavailable"
+            return nil
+        }
         let window = unsafeDowncast(rawWindow, to: AXUIElement.self)
         let names = [kAXRoleAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute,
                      kAXEnabledAttribute, kAXHiddenAttribute, kAXPositionAttribute, kAXSizeAttribute,
                      kAXChildrenAttribute]
         var result = Snapshot(window: window)
         var pending: [(AXUIElement, Int?, Bool, Bool, Bool)] = [(window, nil, false, true, true)]
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.3
+        let started = ProcessInfo.processInfo.systemUptime
+        let deadline = started + 0.8
         while let (element, parent, inPage, parentVisible, parentEnabled) = pending.popLast() {
-            guard result.nodes.count < 2500, ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+            guard result.nodes.count < 6000, ProcessInfo.processInfo.systemUptime < deadline else {
+                lastScan = "scan limit reached after \(result.nodes.count) nodes; incomplete tree discarded"
+                return nil
+            }
             var raw: CFArray?
-            guard AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &raw) == .success,
+            let error = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &raw)
+            guard error == .success,
                   let values = raw as? [Any], values.count == names.count else {
                 // A tab transition or an AX timeout must not produce a partial player match.
-                if inPage { return nil }
+                if inPage {
+                    lastScan = "web accessibility read failed (\(error.rawValue)) after \(result.nodes.count) nodes"
+                    return nil
+                }
                 continue
             }
             let role = values[0] as? String ?? ""
@@ -69,13 +96,26 @@ private actor BrowserAccessibility {
                 }
             }
         }
+        let pages = result.nodes.filter { $0.role == "AXWebArea" }.count
+        let buttons = result.nodes.filter { $0.role == kAXButtonRole && $0.pressable }.count
+        let elapsed = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+        lastScan = "\(result.nodes.count) nodes, \(pages) web areas, \(buttons) pressable buttons, \(elapsed) ms"
         return result
     }
 
     func controls(pid: pid_t) -> EpisodeControls? {
-        guard let tree = snapshot(pid: pid),
-              let selection = BrowserPlayerDetection.select(tree.nodes) else { return nil }
+        guard let tree = snapshot(pid: pid) else { return nil }
+        guard let selection = BrowserPlayerDetection.select(tree.nodes) else {
+            lastScan += "; no unambiguous player episode controls"
+            return nil
+        }
+        lastScan += "; previous=\(selection.previous.map { String(tree.nodes[$0].enabled) } ?? "absent"), next=\(selection.next.map { String(tree.nodes[$0].enabled) } ?? "absent")"
         return selection.controls(in: tree.nodes)
+    }
+
+    func diagnostic(pid: pid_t?) -> String {
+        if let pid { _ = controls(pid: pid) }
+        return lastScan
     }
 
     func press(_ action: String, pid: pid_t) throws {
@@ -150,6 +190,18 @@ final class BrowserPlayer {
         generation += 1
         pending?.cancel(); pending = nil
         pid = nil; controls = nil; sampledAt = -.infinity
+    }
+
+    func diagnostic() async -> String {
+        guard !AppInspector.isLocked else { return "Browser player: Mac locked" }
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              KeyMapping.layout(bundleId: app.bundleIdentifier ?? "") == "browser" else {
+            // Opening Terminal to run the CLI changes focus. Keep the last scan
+            // available, explicitly labelled as historical, without pressing anything.
+            return "Last browser player scan: \(await accessibility.diagnostic(pid: nil))"
+        }
+        let report = await accessibility.diagnostic(pid: app.processIdentifier)
+        return "Browser player (\(app.localizedName ?? "browser")): \(report)"
     }
 
     func perform(_ action: String) async throws {

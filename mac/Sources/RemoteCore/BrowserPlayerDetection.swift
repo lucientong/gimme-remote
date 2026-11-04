@@ -86,7 +86,10 @@ public enum BrowserPlayerDetection {
                 return supporting.count >= 2 ? selection(controls) : nil
             }
             if ["AXWindow", "AXApplication", "AXScrollArea"].contains(nodes[group].role) { break }
-            if controls.contains(where: { kinds[$0] == .supporting }) { return selection(controls) }
+            // Chromium retains some nested control groups while flattening others.
+            // Play/volume may share an inner group, with episode buttons in its parent.
+            if controls.contains(where: { kinds[$0] == .supporting }),
+               let match = selection(controls) { return match }
             ancestor = nodes[group].parent
         }
         return nil

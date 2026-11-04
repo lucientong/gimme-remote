@@ -86,10 +86,13 @@ gimme status   # Show service status, permissions, connections, and access URLs
 gimme pair     # Generate a new one-time pairing code and print access URLs
 gimme stop     # Pause remote input
 gimme resume   # Resume remote input
+gimme player   # Diagnose browser episode control detection
 gimme --version
 ```
 
 The CLI communicates through a Unix socket in a private directory for the current user. The menu bar supports pausing input, disconnecting devices, revoking all pairings, launch at login, and preventing sleep while connected. Pausing keeps phones connected and shows a paused state; resuming enables controls again. Disconnecting keeps pairings but requires tapping **Reconnect** on the phone. Revoking pairings requires pairing again.
+
+If browser episode buttons are missing, keep a phone connected and bring the video tab to the front for a few seconds, then run `gimme player`. It reports the last scan when Terminal is in front, including permission failures, scan limits, web area/button counts, and detected episode controls. Chromium may take about two seconds to expose its complete accessibility tree after the first request.
 
 ## Releases
 

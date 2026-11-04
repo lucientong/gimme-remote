@@ -86,6 +86,7 @@ gimme status   # 서비스, 권한, 연결 수, 접속 URL 표시
 gimme pair     # 일회용 페어링 코드를 갱신하고 접속 URL 표시
 gimme stop     # 원격 입력 일시 정지
 gimme resume   # 원격 입력 재개
+gimme player   # 브라우저 에피소드 버튼 감지 결과 확인
 gimme --version
 ```
 

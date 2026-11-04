@@ -54,3 +54,16 @@ private func playerFixture(previous: Bool? = nil, next: Bool? = nil) -> [PlayerN
     nodes[5].frame.origin.y = 1000
     #expect(BrowserPlayerDetection.select(nodes) == nil)
 }
+
+@Test func nestedBrowserControlsContinueToThePlayerContainer() {
+    var nodes = playerFixture(previous: false, next: true)
+    // Inner group contains play/fullscreen; episode buttons are sibling controls.
+    nodes.append(.init(parent: 1))
+    nodes[2].parent = 6
+    nodes[3].parent = 6
+    #expect(BrowserPlayerDetection.select(nodes)?.controls(in: nodes) == EpisodeControls(previous: false, next: true))
+    // A nearby page-level Next still needs the flattened-tree media evidence.
+    nodes[4].parent = 0
+    nodes[5].parent = 0
+    #expect(BrowserPlayerDetection.select(nodes) == nil)
+}

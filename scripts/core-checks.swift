@@ -140,6 +140,13 @@ private func checkBrowserPlayers() {
     precondition(BrowserPlayerDetection.select(series)?.controls(in: series) == .init(previous: false, next: true))
     let onlyNext = single + [button("Next video (Shift+N)", x: 136)]
     precondition(BrowserPlayerDetection.select(onlyNext)?.controls(in: onlyNext) == .init(next: true))
+    var nested = series + [PlayerNode(parent: 1)]
+    nested[2].parent = 6
+    nested[3].parent = 6
+    precondition(BrowserPlayerDetection.select(nested)?.controls(in: nested) == .init(previous: false, next: true))
+    nested[4].parent = 0
+    nested[5].parent = 0
+    precondition(BrowserPlayerDetection.select(nested) == nil)
     var hidden = onlyNext
     hidden[4].visible = false
     precondition(BrowserPlayerDetection.select(hidden) == nil)

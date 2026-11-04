@@ -179,6 +179,8 @@ final class AppModel: ObservableObject {
             ipc = try IPCServer { [weak self] command in
                 guard let self else { return "App unavailable" }
                 switch command {
+                case "player":
+                    return await BrowserPlayer.shared.diagnostic()
                 case "pair":
                     await self.refreshCode()
                     return "Pair: \(self.pairURL) (expires in 120 seconds)"

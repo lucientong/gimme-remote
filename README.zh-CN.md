@@ -86,6 +86,7 @@ gimme status   # 服务、权限、连接数和访问地址
 gimme pair     # 更新一次性配对码并输出地址
 gimme stop     # 暂停远程输入
 gimme resume   # 恢复远程输入
+gimme player   # 查看最近一次浏览器换集控件检测结果
 gimme --version
 ```
 

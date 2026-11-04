@@ -86,6 +86,7 @@ gimme status   # サービス、権限、接続数、アクセス URL を表示
 gimme pair     # 一度限りのペアリングコードを更新し、アクセス URL を表示
 gimme stop     # リモート入力を一時停止
 gimme resume   # リモート入力を再開
+gimme player   # ブラウザのエピソード操作の検出結果を確認
 gimme --version
 ```
 
