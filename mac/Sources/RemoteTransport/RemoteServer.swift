@@ -3,16 +3,19 @@ import Hummingbird
 import HummingbirdWebSocket
 import RemoteCore
 
+private struct SessionDisconnected: Error {}
+private struct ServerStopping: Error {}
+
 public struct RemoteServer: Sendable {
     let sessions: Sessions
     let state: @MainActor @Sendable () -> RemoteState
-    let input: @MainActor @Sendable (Message, UUID) throws -> Void
+    let input: @MainActor @Sendable (Message, UUID) async throws -> Void
     let release: @MainActor @Sendable (UUID) -> Void
     let ready: @MainActor @Sendable () -> Void
 
     public init(sessions: Sessions,
                 state: @escaping @MainActor @Sendable () -> RemoteState,
-                input: @escaping @MainActor @Sendable (Message, UUID) throws -> Void,
+                input: @escaping @MainActor @Sendable (Message, UUID) async throws -> Void,
                 release: @escaping @MainActor @Sendable (UUID) -> Void,
                 ready: @escaping @MainActor @Sendable () -> Void) {
         self.sessions = sessions; self.state = state; self.input = input; self.release = release; self.ready = ready
@@ -38,6 +41,7 @@ public struct RemoteServer: Sendable {
             let generation: Int
             do { generation = try await sessions.open(id) } catch { return }
             let (stream, continuation) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingOldest(64))
+            let events = await sessions.events(for: id, generation: generation)
             func send(_ message: Message) { continuation.yield(message.json()) }
             let start = ProcessInfo.processInfo.systemUptime
             do {
@@ -108,12 +112,39 @@ public struct RemoteServer: Sendable {
                         }
                     }
                     group.addTask {
+                        for await event in events {
+                            switch event {
+                            case .disconnected: throw SessionDisconnected()
+                            case .serverStopping: throw ServerStopping()
+                            case .stateChanged:
+                                guard await sessions.isAuthenticated(id) else { continue }
+                                var payload = Payload(); payload.state = await state()
+                                send(.init(type: "state.updated", payload: payload))
+                            }
+                        }
+                    }
+                    group.addTask {
                         for await text in stream {
                             try Task.checkCancellation()
                             try await outbound.write(.text(text))
                         }
                     }
-                    _ = try await group.next()
+                    do {
+                        _ = try await group.next()
+                        // The reader or ticker can observe the epoch change before the event task.
+                        if await sessions.isCurrent(generation) {
+                            try? await outbound.close(.normalClosure, reason: nil)
+                        } else if await sessions.isStopping() {
+                            try? await outbound.close(.goingAway, reason: nil)
+                        } else {
+                            try? await outbound.close(.init(codeNumber: 4000), reason: "Disconnected by Mac")
+                        }
+                    } catch is SessionDisconnected {
+                        // Paired phones must wait for a deliberate reconnect after "disconnect all".
+                        try? await outbound.close(.init(codeNumber: 4000), reason: "Disconnected by Mac")
+                    } catch {
+                        try? await outbound.close(.goingAway, reason: nil)
+                    }
                     continuation.finish()
                     group.cancelAll()
                 }

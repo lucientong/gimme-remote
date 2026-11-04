@@ -72,7 +72,7 @@
       "if": { "properties": { "type": { "const": "media.command" } } },
       "then": { "properties": { "payload": {
         "type": "object", "required": ["action"], "additionalProperties": false,
-        "properties": { "action": { "enum": ["playPause", "seekForward", "seekBackward", "volumeUp", "volumeDown", "mute", "fullscreen"] } }
+        "properties": { "action": { "enum": ["playPause", "seekForward", "seekBackward", "volumeUp", "volumeDown", "mute", "fullscreen", "previousEpisode", "nextEpisode"] } }
       } } }
     },
     {
@@ -103,7 +103,11 @@
         "appName": { "type": "string" }, "bundleId": { "type": "string" },
         "layout": { "enum": ["iina", "browser", "generic"] },
         "locked": { "type": "boolean" }, "accessibility": { "type": "boolean" },
-        "paused": { "type": "boolean" }, "captureAvailable": { "const": false }
+        "paused": { "type": "boolean" }, "captureAvailable": { "const": false },
+        "episodeControls": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "previous": { "type": "boolean" }, "next": { "type": "boolean" } }
+        }
       }
     }
   }

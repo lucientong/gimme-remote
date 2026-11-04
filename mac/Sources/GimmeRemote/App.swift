@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var model: AppModel?
     private var iconState = ""
     private var iconUpdates: AnyCancellable?
+    private var terminating = false
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         if NSRunningApplication.runningApplications(withBundleIdentifier: "com.lucientong.GimmeRemote").count > 1 {
@@ -95,6 +96,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let screen = statusItem.button?.window?.screen ?? NSScreen.main
         return max(1, (screen?.visibleFrame.height ?? 800) - 64)
     }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        if !terminating {
+            terminating = true
+            Task {
+                await model.shutdown()
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+        }
+        return .terminateLater
+    }
     func applicationWillTerminate(_ notification: Notification) { model?.stop() }
 }
 
@@ -131,7 +143,7 @@ final class AppModel: ObservableObject {
             lockObservers.append(DistributedNotificationCenter.default().addObserver(forName: .init(name), object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     AppInspector.notifiedLocked = value
-                    if value { self?.controller.release() }
+                    if value { BrowserPlayer.shared.clear(); self?.controller.release() }
                     // Unlocking usually unlocks the Keychain too; restore devices paired before.
                     else if let self { await self.retryVault() }
                 }
@@ -141,7 +153,7 @@ final class AppModel: ObservableObject {
                                   state: { [weak self] in AppInspector.state(paused: self?.paused ?? true) },
                                   input: { [weak self] message, id in
                                       guard let self else { throw ControlError("servicePaused") }
-                                      try self.controller.perform(message, session: id, state: AppInspector.state(paused: self.paused))
+                                      try await self.controller.perform(message, session: id, state: AppInspector.state(paused: self.paused))
                                   },
                                   release: { [weak self] id in self?.controller.release(session: id) },
                                   ready: { [weak self] in self?.running = true })
@@ -181,6 +193,9 @@ final class AppModel: ObservableObject {
                     code = current.code; expires = current.expires
                 } else { code = "" }
                 if locked || !trusted || paused { controller.release() }
+                if connected > 0 && !paused {
+                    await BrowserPlayer.shared.refresh(application: NSWorkspace.shared.frontmostApplication)
+                } else { BrowserPlayer.shared.clear() }
                 updatePower()
                 try? await Task.sleep(for: .seconds(1))
             }
@@ -199,15 +214,23 @@ final class AppModel: ObservableObject {
     }
     func setPaused(_ value: Bool) async {
         paused = value
+        BrowserPlayer.shared.clear()
         controller.release()
-        if value { await sessions.disconnectAll() }
+        await sessions.stateChanged()
         updatePower()
     }
     func revoke() async {
+        BrowserPlayer.shared.clear()
         do { try await sessions.revokeAll(); controller.release(); await refreshCode() }
         catch { failure = "无法撤销设备：Keychain 写入失败" }
     }
-    func disconnect() async { await sessions.disconnectAll(); controller.release() }
+    func disconnect() async {
+        BrowserPlayer.shared.clear()
+        await sessions.disconnectAll()
+        connected = 0
+        controller.release()
+        updatePower()
+    }
     func setLogin(_ value: Bool) {
         do {
             if value { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -229,9 +252,15 @@ final class AppModel: ObservableObject {
         }
     }
     func stop() {
+        BrowserPlayer.shared.clear()
         task?.cancel(); ticker?.cancel(); controller.release()
         for observer in lockObservers { DistributedNotificationCenter.default().removeObserver(observer) }
         lockObservers.removeAll()
         if assertionActive { IOPMAssertionRelease(assertion); assertionActive = false }
+    }
+    func shutdown() async {
+        await sessions.shutdown()
+        stop()
+        await task?.value
     }
 }

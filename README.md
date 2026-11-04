@@ -10,14 +10,22 @@ Planned: screenshot-based clicking, per-device management, and an English interf
 
 ## Installation
 
+Install with Homebrew:
+
 ```bash
 brew install --cask lucientong/tap/gimme-remote
 open -a GimmeRemote
 ```
 
-Open the menu bar app and grant Accessibility permission. Connect your phone and Mac to the same Wi-Fi network and scan the QR code. To keep the remote on your Home Screen, use Safari's **Share → Add to Home Screen** first, then open it from the Home Screen icon and enter the pairing code there: iOS stores Home Screen web apps separately from Safari, so a pairing made in Safari does not carry over.
+Or download directly from [GitHub Releases](https://github.com/lucientong/gimme-remote/releases/latest): expand **Assets**, download `GimmeRemote-<version>-universal.zip`, unzip it, and drag `GimmeRemote.app` into **Applications**. Open the app from Applications. The same ZIP supports Apple Silicon and Intel; Homebrew and Node are not required.
+
+For the latest test build, use the [testing release](https://github.com/lucientong/gimme-remote/releases/tag/testing). It is updated after checks pass on `master` and may include changes not yet in the stable release.
+
+Open the menu bar app and grant Accessibility permission. Connect your phone and Mac to the same Wi-Fi network and scan the QR code. To keep the remote on your Home Screen, use mobile Chrome's **Share → Add to Home Screen** first, then open it from the Home Screen icon and enter the pairing code there: iOS stores Home Screen web apps separately from the browser, so a pairing made in Chrome does not carry over.
 
 Volume buttons adjust **player volume**; use your TV remote to adjust the TV's overall volume. Web player shortcuts depend on page focus and website support. You can always use the touchpad to click controls on the TV display. The app does not use a Service Worker, cloud relay, or arbitrary script execution.
+
+Browser **Forward / Back** navigate browsing history (⌘] / ⌘[); Forward has no effect when there is no newer history entry. Player **Seek forward / backward** send the right / left arrow keys. **Previous / Next episode** icons appear only when Gimme Remote identifies corresponding controls beside play/pause in the current browser player's accessibility tree. They invoke the player's buttons directly; disabled boundary controls stay disabled. Detection uses the existing Accessibility permission and depends on the browser and website exposing labelled controls. Unrecognised or ambiguous players show no episode buttons.
 
 Use it on a trusted home network. The remote is served over plain HTTP on your LAN and is protected by one-time pairing codes and per-device tokens, not by TLS; avoid public or shared Wi-Fi.
 
@@ -51,6 +59,10 @@ Run the frontend independently with hot reload:
 npm --prefix web run dev
 ```
 
+To inspect the UI without a Mac connection, open `/?preview=browser` on the Vite URL (normally `http://localhost:5173/?preview=browser`) or click **预览遥控界面** at the top of the page. Alternatively, run `npm --prefix web run dev:preview` to start Vite and open the preview. It needs no backend or pairing and offers series, standalone video, first/last episode, IINA, generic, paused, and locked states. Buttons do not send inputs to the Mac. This preview is enabled only in Vite development mode.
+
+`TransportChecks` runs HTTP/WebSocket regression tests and exits. Its port `19371` is used only during tests; it is not the persistent native backend for the frontend.
+
 The app listens on port `9271` by default. Vite proxies `/ws` to `127.0.0.1:9271`. Set these environment variables when running the native app during development:
 
 ```text
@@ -72,7 +84,7 @@ gimme resume   # Resume remote input
 gimme --version
 ```
 
-The CLI communicates through a Unix socket in a private directory for the current user. The menu bar supports pausing input, disconnecting devices, revoking all pairings, launch at login, and preventing sleep while connected.
+The CLI communicates through a Unix socket in a private directory for the current user. The menu bar supports pausing input, disconnecting devices, revoking all pairings, launch at login, and preventing sleep while connected. Pausing keeps phones connected and shows a paused state; resuming enables controls again. Disconnecting keeps pairings but requires tapping **Reconnect** on the phone. Revoking pairings requires pairing again.
 
 ## Releases
 

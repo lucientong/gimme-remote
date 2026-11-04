@@ -3,6 +3,7 @@ import { errors, readStored, requestId, store, type Message, type Payload, type 
 export interface ConnectionState {
   connected: boolean;
   authenticated: boolean;
+  reconnectRequired: boolean;
   remote?: RemoteState;
   error?: string;
 }
@@ -16,7 +17,7 @@ export class Connection {
   private disposed = false;
   private lastMessage = 0;
   private pending = new Map<string, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-  state: ConnectionState = { connected: false, authenticated: false };
+  state: ConnectionState = { connected: false, authenticated: false, reconnectRequired: false };
   onChange: (state: ConnectionState) => void = () => {};
   onDisconnect: () => void = () => {};
 
@@ -25,7 +26,7 @@ export class Connection {
     this.onChange(this.state);
   }
   connect() {
-    if (this.disposed || this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
+    if (this.disposed || this.state.reconnectRequired || this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
     clearTimeout(this.reconnect);
     const server = import.meta.env.VITE_REMOTE_URL || location.origin;
     const endpoint = new URL('/ws', server);
@@ -33,16 +34,20 @@ export class Connection {
     const ws = new WebSocket(endpoint);
     this.ws = ws;
     ws.onopen = () => {
+      if (this.ws !== ws || this.disposed) { ws.close(); return; }
       this.lastMessage = Date.now();
       this.update({ connected: true, authenticated: false, error: undefined });
       if (this.token) this.raw('session.authenticate', { token: this.token });
       clearInterval(this.heartbeat);
       this.heartbeat = setInterval(() => {
-        if (Date.now() - this.lastMessage > 12_000) { ws.close(); return; }
+        // Clear the UI immediately even when a broken network never completes a close handshake.
+        const timeout = this.paired || this.state.authenticated ? 4_000 : 30_000;
+        if (Date.now() - this.lastMessage >= timeout) { this.drop(ws); return; }
         if (this.state.authenticated) this.raw('session.heartbeat', {});
-      }, 4_000);
+      }, 1_000);
     };
     ws.onmessage = event => {
+      if (this.ws !== ws || this.disposed) return;
       this.lastMessage = Date.now();
       try {
         const message = JSON.parse(event.data) as Message;
@@ -73,15 +78,25 @@ export class Connection {
         }
       } catch { this.update({ error: '收到无法识别的消息，请刷新页面' }); }
     };
-    ws.onclose = () => {
-      if (this.ws !== ws) return;
-      clearInterval(this.heartbeat);
-      this.onDisconnect();
-      this.update({ connected: false, authenticated: false, remote: undefined });
-      this.rejectPending('连接已断开');
-      if (!this.disposed) this.reconnect = setTimeout(() => this.connect(), Math.min(8_000, 600 * 2 ** this.retry++));
-    };
-    ws.onerror = () => ws.close();
+    ws.onclose = event => this.drop(ws, event.code === 4000);
+    ws.onerror = () => this.drop(ws);
+  }
+  private drop(ws: WebSocket, reconnectRequired = false) {
+    if (this.ws !== ws) return;
+    this.ws = undefined;
+    clearInterval(this.heartbeat);
+    clearTimeout(this.reconnect);
+    this.update({ connected: false, authenticated: false, remote: undefined, reconnectRequired });
+    this.onDisconnect();
+    this.rejectPending('连接已断开');
+    ws.close();
+    if (!this.disposed && !reconnectRequired) {
+      this.reconnect = setTimeout(() => this.connect(), Math.min(8_000, 600 * 2 ** this.retry++));
+    }
+  }
+  reconnectNow() {
+    this.update({ reconnectRequired: false, error: undefined });
+    this.connect();
   }
   private raw(type: string, payload: Payload, id?: string): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
@@ -114,8 +129,8 @@ export class Connection {
   }
   resume = () => {
     if (document.visibilityState === 'visible') {
-      if (this.ws?.readyState === WebSocket.OPEN && Date.now() - this.lastMessage > 8_000) this.ws.close();
-      else this.connect();
+      if (this.ws?.readyState === WebSocket.OPEN && Date.now() - this.lastMessage >= 2_000) this.drop(this.ws);
+      this.connect();
     } else { this.onDisconnect(); }
   };
   clearError() { this.update({ error: undefined }); }
@@ -125,6 +140,7 @@ export class Connection {
   }
   dispose() {
     this.disposed = true; clearTimeout(this.reconnect); clearInterval(this.heartbeat);
-    this.ws?.close(); this.rejectPending('页面已关闭');
+    if (this.ws) this.drop(this.ws);
+    this.rejectPending('页面已关闭');
   }
 }

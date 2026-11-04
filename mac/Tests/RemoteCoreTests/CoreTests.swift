@@ -99,6 +99,25 @@ final class UnlockingVault: TokenVault, @unchecked Sendable {
     #expect(!(await failing.isAuthenticated(id)))
 }
 
+@Test func disconnectNotifiesIdleSessionsAndDoesNotLoseSetupRaces() async throws {
+    let sessions = try Sessions(vault: MemoryVault())
+    let idle = UUID(), settingUp = UUID()
+    let generation = try await sessions.open(idle)
+    _ = try await sessions.open(settingUp)
+    let events = await sessions.events(for: idle, generation: generation)
+    await sessions.stateChanged()
+    await sessions.disconnectAll()
+    var iterator = events.makeAsyncIterator()
+    if case .disconnected? = await iterator.next() {} else { Issue.record("Disconnect lost") }
+    #expect(await iterator.next() == nil)
+    let lateEvents = await sessions.events(for: settingUp, generation: generation)
+    var late = lateEvents.makeAsyncIterator()
+    if case .disconnected? = await late.next() {} else { Issue.record("Setup race lost") }
+    #expect(await late.next() == nil)
+    // Stale sockets must not occupy the 16-connection budget.
+    for _ in 0..<16 { _ = try await sessions.open(UUID()) }
+}
+
 @Test func unreadableVaultStartsEmptyAndCanPairAgain() async throws {
     #expect(throws: (any Error).self) { try Sessions(vault: UnreadableVault()) }
     let sessions = Sessions(recovering: UnreadableVault())
@@ -136,6 +155,20 @@ final class UnlockingVault: TokenVault, @unchecked Sendable {
     #expect(KeyMapping.layout(bundleId: "com.google.Chrome.canary") == "browser")
     #expect(KeyMapping.layout(bundleId: "com.brave.Browser") == "browser")
     #expect(KeyMapping.layout(bundleId: "com.apple.finder") == "generic")
+}
+
+@Test func episodeNavigationHasNoKeyboardFallbackAndPreservesBrowserHistory() throws {
+    #expect(try KeyMapping.shortcut("forward") == KeyStroke(30, command: true))
+    #expect(try KeyMapping.shortcut("back") == KeyStroke(33, command: true))
+    #expect(try KeyMapping.media("seekForward", iina: false) == KeyStroke(124))
+    #expect(try KeyMapping.media("seekBackward", iina: false) == KeyStroke(123))
+    for action in ["previousEpisode", "nextEpisode"] {
+        #expect(throws: (any Error).self) { try KeyMapping.media(action, iina: true) }
+        #expect(throws: (any Error).self) { try KeyMapping.media(action, iina: false) }
+        var payload = Payload(); payload.action = action
+        let decoded = try Message.decode(Message(type: "media.command", payload: payload).json())
+        #expect(decoded.payload.action == action)
+    }
 }
 
 @Test func consecutiveNearbyTapsBecomeDoubleClicks() {

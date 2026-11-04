@@ -3,9 +3,13 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Connection } from './connection';
 import { RepeatButton, TouchpadGesture } from './gestures';
 import { isStandalone, readStored, store } from './protocol';
+import { episodeControls } from './player';
+import { PreviewConnection, previewScenes, readPreviewScene, type PreviewScene } from './preview';
 import './style.css';
 
-const connection = new Connection();
+const previewScene = import.meta.env.DEV ? readPreviewScene(location.search) : undefined;
+const preview = previewScene ? new PreviewConnection(previewScene) : undefined;
+const connection = preview ?? new Connection();
 const cancelInputs = () => window.dispatchEvent(new Event('gimme.cancel'));
 connection.onDisconnect = cancelInputs;
 const version: string = import.meta.env.VITE_APP_VERSION || 'dev';
@@ -17,6 +21,8 @@ function Icon({ name }: { name: string }) {
     playPause: <><path class="solid" d="M3 5.5 12 12l-9 6.5z" /><path d="M16 6v12M20.5 6v12" /></>,
     back: <><path d="m14 5-9 7 9 7M21 5l-9 7 9 7" /></>,
     next: <><path d="m3 5 9 7-9 7m7-14 9 7-9 7" /></>,
+    previousEpisode: <><path d="M5 5v14" /><path class="solid" d="m19 5-11 7 11 7z" /></>,
+    nextEpisode: <><path class="solid" d="m5 5 11 7-11 7z" /><path d="M19 5v14" /></>,
     minus: <path d="M5 12h14" />,
     plus: <path d="M5 12h14M12 5v14" />,
     mute: <><path d="M11 5 6 9H3v6h3l5 4zM16 9l5 6m0-6-5 6" /></>,
@@ -33,17 +39,17 @@ function Icon({ name }: { name: string }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-function ControlButton({ action, label, short, icon, repeat = false, shortcut = false, className = '' }: {
-  action: string; label: string; short?: string; icon?: string; repeat?: boolean; shortcut?: boolean; className?: string;
+function ControlButton({ action, label, short, icon, repeat = false, shortcut = false, className = '', disabled = false }: {
+  action: string; label: string; short?: string; icon?: string; repeat?: boolean; shortcut?: boolean; className?: string; disabled?: boolean;
 }) {
-  const invoke = () => connection.send(shortcut ? 'input.keyboard.shortcut' : 'media.command', { action });
-  const hold = useMemo(() => new RepeatButton(invoke), [action, shortcut]);
+  const invoke = () => !disabled && connection.send(shortcut ? 'input.keyboard.shortcut' : 'media.command', { action });
+  const hold = useMemo(() => new RepeatButton(invoke), [action, shortcut, disabled]);
   useEffect(() => {
     window.addEventListener('gimme.cancel', hold.stop);
     window.addEventListener('blur', hold.stop);
     return () => { hold.stop(); window.removeEventListener('gimme.cancel', hold.stop); window.removeEventListener('blur', hold.stop); };
   }, [hold]);
-  return <button class={`control ${className}`} disabled={!connection.enabled} aria-label={label} title={label}
+  return <button class={`control ${className}`} disabled={disabled || !connection.enabled} aria-label={label} title={label}
     onContextMenu={e => e.preventDefault()}
     onPointerDown={e => {
       if (!repeat || !connection.enabled) return;
@@ -141,12 +147,14 @@ function App() {
   }, [status.connected, status.authenticated]);
 
   const remote = status.remote;
+  const episodes = episodeControls(remote);
   const layout = remote?.layout ?? 'generic';
   const blocked = !remote ? ''
     : remote.locked ? 'Mac 已锁定，请在 Mac 上解锁'
     : remote.paused ? '遥控已暂停，请在 Mac 菜单栏恢复'
     : !remote.accessibility ? '请先在 Mac 菜单栏授权辅助功能' : '';
-  const stateText = !status.authenticated ? (connection.paired ? '连接中' : status.connected ? '未配对' : '未连接')
+  const stateText = status.reconnectRequired ? '已断开'
+    : !status.authenticated ? (connection.paired ? '连接中' : status.connected ? '未配对' : '未连接')
     : remote?.locked ? '已锁定' : remote?.paused ? '已暂停' : remote && !remote.accessibility ? '未授权' : '已连接';
   async function pair(value = code) {
     if (pairing) return;
@@ -163,7 +171,7 @@ function App() {
   }
   async function sendText(e: Event) {
     e.preventDefault(); setSending(true); setFeedback('');
-    try { await connection.request('input.text.insert', { text }); setText(''); setFeedback('已发送输入'); }
+    try { await connection.request('input.text.insert', { text }); setText(''); setFeedback(preview ? '已预览文字输入，未发送到 Mac' : '已发送输入'); }
     catch (error) { setFeedback((error as Error).message); }
     finally { setSending(false); }
   }
@@ -180,8 +188,8 @@ function App() {
     </section>
     : <>
       <section class="toolbar five" aria-label="浏览器与文本工具">
-        <ControlButton action="back" label="后退" icon="left" shortcut />
-        <ControlButton action="forward" label="前进" icon="right" shortcut />
+        <ControlButton action="back" label="网页后退" short="后退" icon="left" shortcut />
+        <ControlButton action="forward" label="网页前进" short="前进" icon="right" shortcut />
         <ControlButton action="reload" label="刷新" icon="reload" shortcut />
         {inputButton}
         {switchButton}
@@ -192,14 +200,22 @@ function App() {
         <ControlButton action="nextTab" label="下一标签" shortcut />
         {layout === 'browser' && <ControlButton action="escape" label="Esc" shortcut />}
       </div>
+      {layout === 'browser' && <p class="volume-note">网页前进 / 后退切换浏览历史</p>}
     </>;
   // The browser layout leads with the touchpad, so playback shrinks to one row.
   const player = <section class={`remote-panel ${layout === 'browser' ? 'compact' : ''}`} aria-label="播放器遥控">
     {layout === 'browser' && <div class="panel-title">网页播放器</div>}
+    {episodes && <div class="episode-row" role="group" aria-label="上下集与播放">
+      {typeof episodes.previous === 'boolean'
+        ? <ControlButton action="previousEpisode" label="上一集" icon="previousEpisode" disabled={!episodes.previous} /> : <span />}
+      <ControlButton action="playPause" label="播放 / 暂停" icon="playPause" className="play" />
+      {typeof episodes.next === 'boolean'
+        ? <ControlButton action="nextEpisode" label="下一集" icon="nextEpisode" disabled={!episodes.next} /> : <span />}
+    </div>}
     {layout === 'browser'
-      ? <div class="compact-row">
+      ? <div class={`compact-row ${episodes ? 'six' : ''}`}>
         <ControlButton action="seekBackward" label="快退" icon="back" repeat />
-        <ControlButton action="playPause" label="播放 / 暂停" icon="playPause" className="play" />
+        {!episodes && <ControlButton action="playPause" label="播放 / 暂停" icon="playPause" className="play" />}
         <ControlButton action="seekForward" label="快进" icon="next" repeat />
         <ControlButton action="volumeDown" label="音量 −" icon="minus" repeat />
         <ControlButton action="volumeUp" label="音量 +" icon="plus" repeat />
@@ -233,16 +249,30 @@ function App() {
     <header class="header">
       <div class="brand"><Icon name="remote" /><span>gimme<span class="brand-dot">.</span></span></div>
       <button class={`target ${connection.enabled ? 'online' : ''}`} onClick={() => setSettings(!settings)} aria-label="连接状态和触控板设置">
-        <i /><span>{status.authenticated ? remote?.appName ?? 'Mac' : 'Mac'} · {stateText}</span><span class="chevron">⌄</span>
+        <i /><span>{status.authenticated ? remote?.appName ?? 'Mac' : 'Mac'} · {preview ? '预览' : stateText}</span><span class="chevron">⌄</span>
       </button>
     </header>
+    {import.meta.env.DEV && (preview ? <section class="preview-panel" aria-label="界面预览">
+      <div class="section-top"><strong>界面预览</strong><a href={location.pathname}>返回连接页</a></div>
+      <label for="preview-scene">预览状态</label>
+      <select id="preview-scene" value={preview.scene} onChange={e => {
+        const scene = e.currentTarget.value as PreviewScene;
+        preview.setScene(scene); setFeedback('');
+        const url = new URL(location.href);
+        url.searchParams.set('preview', preview.scene);
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+      }}>
+        {Object.entries(previewScenes).map(([value, label]) => <option value={value}>{label}</option>)}
+      </select>
+      <p role="status">{preview.lastAction || '无需连接 Mac，按钮操作仅在本页演示。'}</p>
+    </section> : <a class="preview-entry" href={`${location.pathname}?preview=browser`}>预览遥控界面 · 无需连接 Mac</a>)}
     {status.error && status.error !== pairError && !blocked && <div class="notice" role="status">{status.error}</div>}
     {settings && <section class="settings">
       <div class="section-top"><span class="section-label">手感设置</span><button class="text-button" onClick={() => setSettings(false)}>完成</button></div>
       <label for="speed">指针速度 <strong>{speed.toFixed(1)}×</strong></label>
       <input id="speed" type="range" min="0.5" max="3" step="0.1" value={speed} onInput={e => setSpeed(Number(e.currentTarget.value))} />
       <label class="checkbox"><input type="checkbox" checked={acceleration} onChange={e => setAcceleration(e.currentTarget.checked)} />指针加速</label>
-      <p>Safari → 分享 → 添加到主屏幕，下次一键打开。主屏幕入口与 Safari 分开保存配对，首次打开需在 Mac 上更新配对码后再输入一次。</p>
+      <p>手机 Chrome → 分享 → 添加到主屏幕，下次一键打开。主屏幕入口与浏览器分开保存配对，首次打开需在 Mac 上更新配对码后再输入一次。</p>
     </section>}
     {status.authenticated ? <div class="deck-area">
       {layout === 'browser' ? <>{touchpad}{tools}{player}</> : <>{player}{touchpad}{tools}</>}
@@ -255,6 +285,10 @@ function App() {
       </form>}
       {blocked && <div class="blocked" role="status"><div><Icon name="lock" /><span>{blocked}</span></div></div>}
     </div>
+    : status.reconnectRequired ? <section class="pair-panel connecting">
+      <p role="status">Mac 已断开这台手机，配对仍然保留。</p>
+      <button class="primary" onClick={() => connection.reconnectNow()}>重新连接</button>
+    </section>
     : connection.paired ? <section class="pair-panel connecting">{waiting}</section>
     : <section class="pair-panel">
       <h1>连接你的 Mac</h1>
@@ -269,7 +303,7 @@ function App() {
         {pairError && <p role="alert" class="error">{pairError}</p>}
       </form>
       {!status.connected && waiting}
-      {!isStandalone() && <small>想放到主屏幕：先“分享 → 添加到主屏幕”，再从主屏幕图标打开并配对。</small>}
+      {!isStandalone() && <small>想放到主屏幕：先在手机 Chrome 中“分享 → 添加到主屏幕”，再从主屏幕图标打开并配对。</small>}
       <small>只传输按键操作，不会传输屏幕画面。</small>
     </section>}
     <footer>Gimme Remote {version === 'dev' ? version : `v${version}`}</footer>

@@ -15,9 +15,13 @@ enum AppInspector {
     static func state(paused: Bool) -> RemoteState {
         let app = NSWorkspace.shared.frontmostApplication
         let id = app?.bundleIdentifier ?? ""
-        return .init(appName: app?.localizedName ?? "Mac", bundleId: id,
+        var value = RemoteState(appName: app?.localizedName ?? "Mac", bundleId: id,
                      layout: KeyMapping.layout(bundleId: id), locked: isLocked,
                      accessibility: AXIsProcessTrusted(), paused: paused)
+        if value.layout == "browser", value.accessibility, !value.locked, !paused {
+            value.episodeControls = BrowserPlayer.shared.current(for: app)
+        }
+        return value
     }
     static func requestAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary

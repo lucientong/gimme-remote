@@ -6,6 +6,7 @@ export interface RemoteState {
   accessibility: boolean;
   paused: boolean;
   captureAvailable: boolean;
+  episodeControls?: { previous?: boolean; next?: boolean };
 }
 export interface Payload {
   code?: string;
@@ -38,12 +39,13 @@ export const errors: Record<string, string> = {
   pointerBusy: '另一台手机正在拖动，请稍后再试',
   protocolVersion: '协议版本不匹配，请刷新页面',
   inputFailed: 'Mac 未能发送输入，请重试',
+  episodeUnavailable: '当前播放器没有可用的对应上下集控件',
   invalidPayload: '指令无效，请刷新页面后重试',
   unsupportedMessage: 'Mac 端版本不支持该操作，请更新 Gimme Remote',
   messageTooLarge: '内容过长，请分段发送',
 };
 
-/** Home Screen web apps have storage separate from Safari, so they pair on their own. */
+/** Home Screen web apps have storage separate from the browser, so they pair on their own. */
 export function isStandalone(): boolean {
   return (navigator as Navigator & { standalone?: boolean }).standalone === true
     || (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches);
@@ -58,5 +60,5 @@ export function readStored<T>(key: string, fallback: T): T {
   catch { return fallback; }
 }
 export function store(key: string, value: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Safari storage can be disabled. */ }
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Browser storage can be disabled. */ }
 }

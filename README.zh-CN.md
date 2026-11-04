@@ -10,14 +10,22 @@
 
 ## 安装
 
+使用 Homebrew 安装：
+
 ```bash
 brew install --cask lucientong/tap/gimme-remote
 open -a GimmeRemote
 ```
 
-打开菜单栏 App，授权“辅助功能”；手机与 Mac 连接同一 Wi-Fi 后扫描二维码。想从主屏幕使用时，请先在 Safari 中“分享 → 添加到主屏幕”，再从主屏幕图标打开并在其中输入配对码：iOS 的主屏幕网页与 Safari 分开存储，在 Safari 中完成的配对不会带过去。
+也可以直接从 [GitHub Releases](https://github.com/lucientong/gimme-remote/releases/latest) 下载：展开 **Assets**，下载 `GimmeRemote-<版本>-universal.zip`，解压后将 `GimmeRemote.app` 拖入“应用程序”，再从“应用程序”中打开。一个 ZIP 同时支持 Apple Silicon 与 Intel，无需安装 Homebrew 或 Node。
+
+体验最新测试版本可下载 [testing Release](https://github.com/lucientong/gimme-remote/releases/tag/testing)。它在 `master` 检查通过后更新，可能包含尚未进入正式版的改动。
+
+打开菜单栏 App，授权“辅助功能”；手机与 Mac 连接同一 Wi-Fi 后扫描二维码。想从主屏幕使用时，请先在手机 Chrome 中“分享 → 添加到主屏幕”，再从主屏幕图标打开并在其中输入配对码：iOS 的主屏幕网页与浏览器分开存储，在 Chrome 中完成的配对不会带过去。
 
 音量按钮调节 **播放器音量**，电视总音量仍用电视遥控器。网页播放器快捷键受页面焦点与网站支持影响，始终可用触控板点击电视画面里的控件。不使用 Service Worker、云中继或任意脚本执行。
+
+浏览器工具栏的 **网页前进 / 后退** 切换浏览历史（⌘] / ⌘[）；没有更新的历史记录时，“前进”不会发生跳转。播放器的 **快进 / 快退** 发送右 / 左方向键。仅在当前网页播放器的辅助功能树中识别到播放按钮旁的对应控件时，显示 **上一集 / 下一集** 图标，并直接调用网页按钮；首尾集的禁用状态同步保留。识别沿用已有辅助功能授权，依赖浏览器和网站提供带名称的控件；无法识别或存在多个候选播放器时不显示上下集按钮。
 
 请在可信的家庭网络中使用。遥控页面在局域网内以明文 HTTP 提供，依靠一次性配对码与每台设备的令牌保护，而非 TLS；避免在公共或共享 Wi-Fi 中使用。
 
@@ -51,6 +59,10 @@ swift test --package-path mac --jobs 4
 npm --prefix web run dev
 ```
 
+只查看前端 UI 时，打开 Vite 地址后的 `/?preview=browser`（默认 `http://localhost:5173/?preview=browser`），或点击页面顶部的“预览遥控界面”。也可以用 `npm --prefix web run dev:preview` 启动并自动打开预览。无需服务端、配对或局域网连接；预览可切换分集、单视频、首尾集、IINA、通用、暂停和锁屏状态，按钮不会发送操作到 Mac。入口仅在 Vite 开发模式提供，正式版不启用。
+
+`TransportChecks` 是运行后退出的 HTTP/WebSocket 回归测试，监听的 `19371` 端口仅用于测试；它不是供前端连接的常驻原生服务端。
+
 App 默认服务端口为 `9271`；Vite 的 `/ws` 代理指向 `127.0.0.1:9271`。原生开发时设置：
 
 ```text
@@ -72,7 +84,7 @@ gimme resume   # 恢复远程输入
 gimme --version
 ```
 
-CLI 使用当前用户私有目录下的 Unix socket。菜单栏支持暂停、断开设备、撤销全部配对、登录启动与连接期间防休眠。
+CLI 使用当前用户私有目录下的 Unix socket。菜单栏支持暂停、断开设备、撤销全部配对、登录启动与连接期间防休眠。暂停时手机保持连接并显示“已暂停”，恢复后继续遥控；断开设备会保留配对，需在手机上点击“重新连接”；撤销配对则需要重新扫码配对。
 
 ## 发布
 

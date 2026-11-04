@@ -16,7 +16,7 @@ final class InputController {
         }
     }
 
-    func perform(_ message: Message, session: UUID, state: RemoteState) throws {
+    func perform(_ message: Message, session: UUID, state: RemoteState) async throws {
         guard !state.paused else { throw ControlError("servicePaused") }
         guard !state.locked else { throw ControlError("macLocked") }
         guard state.accessibility else { throw ControlError("accessibilityRequired") }
@@ -55,6 +55,11 @@ final class InputController {
         case "input.keyboard.shortcut":
             try key(KeyMapping.shortcut(p.action!))
         case "media.command":
+            if ["previousEpisode", "nextEpisode"].contains(p.action!) {
+                guard state.layout == "browser" else { throw ControlError("episodeUnavailable") }
+                try await BrowserPlayer.shared.perform(p.action!)
+                return
+            }
             let iina = state.layout == "iina"
             let pid = iina ? NSRunningApplication.runningApplications(withBundleIdentifier: "com.colliderli.iina").first?.processIdentifier : nil
             try key(KeyMapping.media(p.action!, iina: iina), pid: pid)

@@ -80,6 +80,7 @@ public struct Message: Codable, Sendable {
     ]
     public static let mediaActions: Set<String> = [
         "playPause", "seekForward", "seekBackward", "volumeUp", "volumeDown", "mute", "fullscreen",
+        "previousEpisode", "nextEpisode",
     ]
 }
 
@@ -99,6 +100,15 @@ public struct Payload: Codable, Sendable {
     public init() {}
 }
 
+/// nil means absent; false means the player exposes a disabled boundary control.
+public struct EpisodeControls: Codable, Sendable, Equatable {
+    public var previous: Bool?
+    public var next: Bool?
+    public init(previous: Bool? = nil, next: Bool? = nil) {
+        self.previous = previous; self.next = next
+    }
+}
+
 public struct RemoteState: Codable, Sendable, Equatable {
     public var appName: String
     public var bundleId: String
@@ -107,6 +117,7 @@ public struct RemoteState: Codable, Sendable, Equatable {
     public var accessibility: Bool
     public var paused: Bool
     public var captureAvailable: Bool = false
+    public var episodeControls: EpisodeControls?
     public init(appName: String, bundleId: String, layout: String, locked: Bool, accessibility: Bool, paused: Bool) {
         self.appName = appName
         self.bundleId = bundleId

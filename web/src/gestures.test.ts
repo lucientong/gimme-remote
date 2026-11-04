@@ -58,3 +58,12 @@ it('shared schema rejects arbitrary commands and accepts actual input envelopes'
   expect(validate({ version: 1, type: 'shell.exec', payload: {} })).toBe(false);
   expect(validate({ version: 1, type: 'input.pointer.move', payload: { dx: 501, dy: 0 } })).toBe(false);
 });
+it('episode commands are separate from browser history and seeking', () => {
+  const validate = new Ajv().compile(schema);
+  for (const action of ['previousEpisode', 'nextEpisode']) {
+    expect(validate({ version: 1, type: 'media.command', payload: { action } })).toBe(true);
+    expect(validate({ version: 1, type: 'input.keyboard.shortcut', payload: { action } })).toBe(false);
+  }
+  expect(validate({ version: 1, type: 'media.command', payload: { action: 'forward' } })).toBe(false);
+  expect(validate({ version: 1, type: 'input.keyboard.shortcut', payload: { action: 'forward' } })).toBe(true);
+});

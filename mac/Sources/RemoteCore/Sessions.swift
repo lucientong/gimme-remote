@@ -43,12 +43,17 @@ public struct PairingCode: Sendable {
 }
 
 public actor Sessions {
+    public enum Event: Sendable { case disconnected, stateChanged, serverStopping }
     private let vault: any TokenVault
     private var devices: [String: String]
     private var pairing: PairingCode?
     private var connections: Set<UUID> = []
     private var authenticated: [UUID: String] = [:]
     private var activity: [UUID: TimeInterval] = [:]
+    private var listeners: [UUID: AsyncStream<Event>.Continuation] = [:]
+    private var closing: Set<UUID> = []
+    private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
+    private var stopping = false
     private var pairLimit = RateLimiter(capacity: 5, perSecond: 1.0 / 12)
     private var connectLimit = RateLimiter(capacity: 20, perSecond: 2)
     private var epoch = 0
@@ -92,6 +97,7 @@ public actor Sessions {
     }
 
     public func open(_ id: UUID) throws -> Int {
+        guard !stopping else { throw ControlError("servicePaused") }
         guard connections.count < 16, connectLimit.allow() else { throw ControlError("rateLimited") }
         connections.insert(id)
         activity[id] = ProcessInfo.processInfo.systemUptime
@@ -102,6 +108,28 @@ public actor Sessions {
         connections.remove(id)
         authenticated[id] = nil
         activity[id] = nil
+        listeners.removeValue(forKey: id)?.finish()
+        closing.remove(id)
+        if closing.isEmpty {
+            for waiter in shutdownWaiters { waiter.resume() }
+            shutdownWaiters.removeAll()
+        }
+    }
+
+    /// Subscribe before starting the socket tasks; a disconnect during setup must not be lost.
+    public func events(for id: UUID, generation: Int) -> AsyncStream<Event> {
+        let (stream, continuation) = AsyncStream<Event>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        guard connections.contains(id), generation == epoch else {
+            continuation.yield(stopping ? .serverStopping : .disconnected)
+            continuation.finish()
+            return stream
+        }
+        listeners[id] = continuation
+        return stream
+    }
+
+    public func stateChanged() {
+        for listener in listeners.values { listener.yield(.stateChanged) }
     }
 
     public func touch(_ id: UUID) { activity[id] = ProcessInfo.processInfo.systemUptime }
@@ -138,10 +166,29 @@ public actor Sessions {
         return devices[token] != nil
     }
     public func isCurrent(_ generation: Int) -> Bool { generation == epoch }
+    public func isStopping() -> Bool { stopping }
     public func activeCount() -> Int { authenticated.count }
     public func pairedCount() -> Int { devices.count }
 
-    public func disconnectAll() { epoch += 1; authenticated.removeAll() }
+    public func disconnectAll() {
+        epoch += 1
+        closing.formUnion(connections)
+        authenticated.removeAll()
+        connections.removeAll()
+        activity.removeAll()
+        for listener in listeners.values {
+            listener.yield(stopping ? .serverStopping : .disconnected)
+            listener.finish()
+        }
+        listeners.removeAll()
+    }
+    /// Let socket handlers flush their close frames and release inputs before cancelling the server.
+    public func shutdown() async {
+        stopping = true
+        disconnectAll()
+        guard !closing.isEmpty else { return }
+        await withCheckedContinuation { shutdownWaiters.append($0) }
+    }
     public func revokeAll() throws {
         try vault.save([:])
         devices = [:]

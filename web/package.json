@@ -6,6 +6,7 @@
   "engines": { "node": ">=22.12.0" },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:preview": "vite --host 0.0.0.0 --open '/?preview=browser'",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

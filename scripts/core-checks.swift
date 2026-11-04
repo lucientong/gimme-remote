@@ -57,6 +57,22 @@ struct CoreChecks {
         try await sessions.revokeAll()
         let revoked = await sessions.isAuthenticated(id), current = await sessions.isCurrent(generation)
         precondition(!revoked && !current)
+        let idle = UUID(), settingUp = UUID()
+        let idleGeneration = try await sessions.open(idle)
+        _ = try await sessions.open(settingUp)
+        let events = await sessions.events(for: idle, generation: idleGeneration)
+        await sessions.stateChanged()
+        await sessions.disconnectAll()
+        var iterator = events.makeAsyncIterator()
+        guard case .disconnected? = await iterator.next() else { throw ControlError("Disconnect event lost") }
+        let finished = await iterator.next()
+        precondition(finished == nil)
+        let lateEvents = await sessions.events(for: settingUp, generation: idleGeneration)
+        var late = lateEvents.makeAsyncIterator()
+        guard case .disconnected? = await late.next() else { throw ControlError("Setup disconnect race lost") }
+        let lateFinished = await late.next()
+        precondition(lateFinished == nil)
+        for _ in 0..<16 { _ = try await sessions.open(UUID()) }
         let failed = try Sessions(vault: BrokenVault())
         _ = try await failed.open(id)
         let fresh = try await failed.newCode()
@@ -84,6 +100,19 @@ struct CoreChecks {
         precondition(address == .init(37, command: true))
         precondition(volume.key == 126)
         precondition(nextTab == .init(48, control: true) && previousTab == .init(48, shift: true, control: true))
+        let historyForward = try KeyMapping.shortcut("forward"), historyBack = try KeyMapping.shortcut("back")
+        let seekForward = try KeyMapping.media("seekForward", iina: false)
+        let seekBackward = try KeyMapping.media("seekBackward", iina: false)
+        precondition(historyForward == .init(30, command: true) && historyBack == .init(33, command: true))
+        precondition(seekForward == .init(124) && seekBackward == .init(123))
+        for action in ["previousEpisode", "nextEpisode"] {
+            try reject { _ = try KeyMapping.media(action, iina: true) }
+            try reject { _ = try KeyMapping.media(action, iina: false) }
+            var payload = Payload(); payload.action = action
+            let decoded = try Message.decode(Message(type: "media.command", payload: payload).json())
+            precondition(decoded.payload.action == action)
+        }
+        checkBrowserPlayers()
         precondition(KeyMapping.layout(bundleId: "com.google.Chrome.canary") == "browser"
             && KeyMapping.layout(bundleId: "com.brave.Browser") == "browser"
             && KeyMapping.layout(bundleId: "com.apple.finder") == "generic")
@@ -96,4 +125,58 @@ struct CoreChecks {
         precondition(scrolled == -2)
         print("Core checks passed: protocol, Unicode, Origin, rate limit, one-time pairing, revocation, persistence failure, unreadable Keychain recovery, Keychain unlock restore, shortcuts, layouts, double-click, slow scroll.")
     }
+}
+
+private func checkBrowserPlayers() {
+    func button(_ label: String, x: Double, parent: Int = 1, enabled: Bool = true) -> PlayerNode {
+        .init(parent: parent, role: "AXButton", labels: [label],
+              frame: CGRect(x: x, y: 500, width: 36, height: 24), enabled: enabled, pressable: true)
+    }
+    let root = PlayerNode(parent: nil, role: "AXWebArea")
+    let group = PlayerNode(parent: 0)
+    let single = [root, group, button("播放/暂停", x: 100), button("全屏", x: 700)]
+    precondition(BrowserPlayerDetection.select(single) == nil)
+    let series = single + [button("上一个", x: 64, enabled: false), button("下一个", x: 136)]
+    precondition(BrowserPlayerDetection.select(series)?.controls(in: series) == .init(previous: false, next: true))
+    let onlyNext = single + [button("Next video (Shift+N)", x: 136)]
+    precondition(BrowserPlayerDetection.select(onlyNext)?.controls(in: onlyNext) == .init(next: true))
+    var hidden = onlyNext
+    hidden[4].visible = false
+    precondition(BrowserPlayerDetection.select(hidden) == nil)
+    var footer = onlyNext
+    footer[4].parent = 0
+    precondition(BrowserPlayerDetection.select(footer) == nil)
+    var distant = onlyNext
+    distant[4].frame.origin.y = 1000
+    precondition(BrowserPlayerDetection.select(distant) == nil)
+    var unlabelled = onlyNext
+    unlabelled[4].labels = []
+    precondition(BrowserPlayerDetection.select(unlabelled) == nil)
+    let seeking = single + [button("Seek forward", x: 136), button("Back", x: 64)]
+    precondition(BrowserPlayerDetection.select(seeking) == nil)
+    let ambiguous = series + [button("下一集", x: 172)]
+    precondition(BrowserPlayerDetection.select(ambiguous) == nil)
+    let multiple = series + [PlayerNode(parent: 0), button("Play", x: 100, parent: 6),
+                             button("Fullscreen", x: 700, parent: 6), button("Next", x: 136, parent: 6)]
+    precondition(BrowserPlayerDetection.select(multiple) == nil)
+    let flat = [root, button("Play", x: 100, parent: 0), button("Fullscreen", x: 700, parent: 0),
+                button("Volume", x: 500, parent: 0), button("Next", x: 136, parent: 0)]
+    precondition(BrowserPlayerDetection.select(flat)?.controls(in: flat) == .init(next: true))
+    var fakeFlat = flat
+    fakeFlat[3].frame.origin.y = 1000
+    precondition(BrowserPlayerDetection.select(fakeFlat) == nil)
+    for (previous, next, play, supporting) in [
+        ("Previous episode", "Next episode", "Pause", "Mute"),
+        ("前の動画", "次の動画", "再生", "フルスクリーン"),
+        ("이전", "다음", "재생", "음소거"),
+    ] {
+        let nodes = [root, group, button(play, x: 100), button(supporting, x: 700),
+                     button(previous, x: 64), button(next, x: 136)]
+        precondition(BrowserPlayerDetection.select(nodes)?.controls(in: nodes) == .init(previous: true, next: true))
+    }
+    // Added capabilities are optional on the wire, so old Mac state remains decodable.
+    let legacy = #"{"appName":"Chrome","bundleId":"com.google.Chrome","layout":"browser","locked":false,"accessibility":true,"paused":false,"captureAvailable":false}"#
+    let state = try! JSONDecoder().decode(RemoteState.self, from: Data(legacy.utf8))
+    precondition(state.episodeControls == nil)
+    print("Browser player checks passed: single/series, boundaries, one-sided, hidden, pagination, seeking, ambiguity, four languages, legacy state.")
 }
